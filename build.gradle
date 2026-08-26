@@ -1,0 +1,41 @@
+plugins {
+    // Core JVM build — no Android, no application plugin needed yet
+    id 'java'
+    id 'application'
+}
+
+group = 'com.debyte'
+version = '0.1.0'
+
+// Java 17 LTS — matches the JDK installed on this machine
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // TUI framework (JLine 3 — terminal input, line editing, ANSI rendering)
+    implementation 'org.jline:jline:3.30.0'
+
+    // JSON persistence for the file-index database
+    implementation 'com.google.code.gson:gson:2.13.2'
+
+    // Testing
+    testImplementation platform('org.junit:junit-bom:5.13.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+application {
+    // Entry point class (created later when we start coding)
+    mainClass = 'solite.Main'
+}
+
+test {
+    useJUnitPlatform()
+}
