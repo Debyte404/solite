@@ -36,18 +36,7 @@ public class FileOrganizer {
     }
 
     // Access control and encapsulation
-    private final List<UndoState> undoStack = new ArrayList<>();
-
-    // Inner record/class for state
-    private static final class UndoState {
-        private final Path originalPath;
-        private final Path movedPath;
-
-        public UndoState(Path originalPath, Path movedPath) {
-            this.originalPath = originalPath;
-            this.movedPath = movedPath;
-        }
-    }
+    private final List<Action> undoStack = new ArrayList<>();
 
     /**
      * Lists children, sorts dirs first.
@@ -64,6 +53,8 @@ public class FileOrganizer {
                         return p1.getFileName().compareTo(p2.getFileName());
                     })
                     .collect(Collectors.toList());
+        } catch (IOException e) {
+            throw new UnreadableFolderException("Cannot read directory: " + dir, e);
         }
     }
 
@@ -77,7 +68,7 @@ public class FileOrganizer {
             collectFilesRecursively(dir, allFiles);
         } catch (IOException e) {
             System.err.println("Error reading directory: " + e.getMessage());
-            throw e;
+            throw new UnreadableFolderException("Cannot read directory: " + dir, e);
         }
 
         Map<String, List<Path>> grouped = allFiles.stream()
@@ -125,16 +116,15 @@ public class FileOrganizer {
         
         for (Path file : files) {
             Path targetFile = targetDir.resolve(file.getFileName());
-            Files.move(file, targetFile);
-            undoStack.add(new UndoState(file, targetFile));
+            Action action = new MoveAction(file, targetFile);
+            action.execute();
+            undoStack.add(action);
         }
     }
 
     public void undoMove() throws IOException {
-        for (UndoState state : undoStack) {
-            if (Files.exists(state.movedPath)) {
-                Files.move(state.movedPath, state.originalPath);
-            }
+        for (Action action : undoStack) {
+            action.undo();
         }
         undoStack.clear();
     }

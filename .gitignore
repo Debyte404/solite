@@ -21,3 +21,7 @@ Thumbs.db
 # Local config / runtime data (organizer index, settings)
 *.solite-index
 local.properties
+
+# Local JDKs and logs
+jdk-*.jdk/
+move_log.txt

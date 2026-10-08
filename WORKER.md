@@ -77,12 +77,12 @@ No tests yet. Phase 4 requires them (see below).
 - Undo state: stack of (originalPath, movedPath) pairs, one level deep
 
 #### FileOrganizer Completion
-`core/FileOrganizer.java` exists but is incomplete:
-- ✅ `listEntries(Path)` — lists children, sorts dirs first
-- ✅ `groupFiles(Path)` — groups by extension, returns `Group[]`
-- ❌ `moveFiles(List<Path>, Path)` — stub, implement
-- ❌ `undoMove(...)` — stub, implement
-- ❌ Filter/search for Screen A type-to-filter
+`core/FileOrganizer.java` backend logic is fully complete:
+- ✅ `listEntries(Path)` — lists children, sorts dirs first, handles filtering, throws `UnreadableFolderException`
+- ✅ `groupFiles(Path)` — groups by extension, returns `Group[]`, throws `UnreadableFolderException`
+- ✅ `moveFiles(List<Path>, Path)` — implemented using `MoveAction` (Action pattern)
+- ✅ `undoMove()` — implemented using `Action` stack
+- ✅ Filter/search for Screen A type-to-filter — implemented via `listEntries` string filter parameter
 
 ### Phase 3 — Mouse + Polish
 
@@ -115,7 +115,7 @@ No tests yet. Phase 4 requires them (see below).
 - **Dumb terminal:** assert no ANSI leaked beyond `\n` when theme is mono
 - **Resize fuzz:** random sizes, assert selection stable + no exception
 - **Mouse tests:** click on each screen's clickable regions, double-click activates, scroll wheel moves list, hover syncs keyboard cursor, mouse-off terminals still usable via keyboard
-- **FileOrganizer:** test groupFiles on a temp dir with mixed extensions, test moveFiles + undoMove roundtrip
+- ✅ **FileOrganizer:** tested groupFiles on a temp dir with mixed extensions, tested moveFiles + undoMove roundtrip (Completed in `FileOrganizerTest.java`)
 
 #### Smoke Test
 ```bash
