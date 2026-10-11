@@ -13,29 +13,41 @@ The design is Hermes-yellow: dark background, one warm yellow lamp, dithered sha
 - Stack: Java 17, Gradle 9.2.0, JLine 3.30.0, Gson, JUnit 5
 - Platform: Windows (primary), Linux/macOS (secondary)
 
-## What's Done (Phase 1)
+## What's Done (Phases 1–4, v0.1)
 
-Phase 1 scaffolded the core TUI engine. **Do not rewrite these — extend them.**
+**v0.1 is complete and tagged.** All three screens, mouse support, and the
+full test suite ship on `main`. **Do not rewrite these — extend them.**
 
 ### Files
 - `Main.java` — entry point, wires JLine terminal + app launch
 - `ui/Theme.java` — Hermes palette (honey #FFC800, amber, wax, paper, ash) with truecolor/256/16/mono detection
 - `ui/LayoutEngine.java` — 4 breakpoints (XS/S/M/L) + responsive geometry
 - `ui/ShadowPainter.java` — two-pass dithered shadows (L2 mist + L1 dust) using `· : .` only
-- `ui/TerminalApp.java` — main loop, WINCH resize, mouse tracking, banner wash, panel render
-- `core/FileOrganizer.java` — file scanner + group-by-extension (incomplete, see Phase 2)
+- `ui/TerminalApp.java` — PICK → GATHER → CONFIRM state machine, type-to-filter,
+  two-pane + single-column gather, confirm modal with size impact, toast (3s),
+  mouse click/scroll via ClickableRegion, empty/error states, emergency mode
+- `ui/ClickableRegion.java` — mouse hit-test regions, rebuilt every repaint
+- `core/FileOrganizer.java` — listEntries(dir, filter), recursive groupFiles,
+  moveFiles via Action stack, undoMove (one level deep)
+- `core/Action.java` + `core/MoveAction.java` — command pattern, cross-fs
+  copy fallback, move_log.txt audit log
+- `core/MoveFailedException.java` + `core/UnreadableFolderException.java`
 - `DESIGN.md` — full design spec (approved 2026-09-11)
 
 ### Build
 ```bash
-./gradlew.bat build        # compile + test
-./gradlew.bat run          # launch TUI (currently shows banner + empty panel + footer)
+./gradlew.bat build        # compile + test (39 tests, all green)
+./gradlew.bat run          # launch TUI: pick folder → gather → confirm → undo
 ```
 
-### Tests
-No tests yet. Phase 4 requires them (see below).
+### Tests (39 total, `./gradlew test` green)
+- `core/FileOrganizerTest` — groupFiles on mixed-ext temp dir, moveFiles + undoMove roundtrip
+- `ui/LayoutEngineTest` — breakpoint matrix 60/80/110/150, geometry, emergency mode, 200-size resize fuzz
+- `ui/ThemeTest` — palette values, capability ladder, dither glyph budget
+- `ui/ClickableRegionTest` — hit-testing, per-screen action coverage, scroll-by-3
+- `ui/TerminalAppLogicTest` — formatSize, shrinkPath, truncate, screen order
 
-## What's Next (Phases 2–4)
+## What's Next (post-v0.1 ideas)
 
 ### Phase 2 — Screens (Pick → Gather → Confirm)
 
