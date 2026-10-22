@@ -1,172 +1,107 @@
 # Solite — Contributor Handoff
 
-> This file tells you what's done, what's next, and how to build it.
-> Read this before touching any code.
+> Read this before touching code. It describes what actually ships today.
 
 ## Project Overview
 
-**Solite** is a smart file organizer with a TUI (terminal user interface) in Java.
-The design is Hermes-yellow: dark background, one warm yellow lamp, dithered shadows.
+**Solite** is a file organiser with a terminal UI, written in Java. You browse
+your folders like a normal file manager, press `o` to group the current folder
+by file type, and confirm the move with `y`.
 
 - Repo: https://github.com/Debyte404/solite
-- Spec: [DESIGN.md](DESIGN.md) — full TUI design (palette, dither, screens, mouse, compat)
-- Stack: Java 17, Gradle 9.2.0, JLine 3.30.0, Gson, JUnit 5
+- Branch: work on `Shiv-Branch` (local branch name `shiv`), not `main`
+- Stack: Java 17, Gradle 9.2.0, JLine 3.30.0, JUnit 5
 - Platform: Windows (primary), Linux/macOS (secondary)
 
-## What's Done (Phases 1–4, v0.1)
+## Current State (v0.2)
 
-**v0.1 is complete and tagged.** All three screens, mouse support, and the
-full test suite ship on `main`. **Do not rewrite these — extend them.**
+One front end: `ui/SimpleUI` — a plain explorer. No themes, no shadows, no
+dither, no alternate screen.
 
 ### Files
-- `Main.java` — entry point, wires JLine terminal + app launch
-- `ui/Theme.java` — Hermes palette (honey #FFC800, amber, wax, paper, ash) with truecolor/256/16/mono detection
-- `ui/LayoutEngine.java` — 4 breakpoints (XS/S/M/L) + responsive geometry
-- `ui/ShadowPainter.java` — two-pass dithered shadows (L2 mist + L1 dust) using `· : .` only
-- `ui/TerminalApp.java` — PICK → GATHER → CONFIRM state machine, type-to-filter,
-  two-pane + single-column gather, confirm modal with size impact, toast (3s),
-  mouse click/scroll via ClickableRegion, empty/error states, emergency mode
-- `ui/ClickableRegion.java` — mouse hit-test regions, rebuilt every repaint
-- `core/FileOrganizer.java` — listEntries(dir, filter), recursive groupFiles,
-  moveFiles via Action stack, undoMove (one level deep)
-- `core/Action.java` + `core/MoveAction.java` — command pattern, cross-fs
-  copy fallback, move_log.txt audit log
-- `core/MoveFailedException.java` + `core/UnreadableFolderException.java`
-- `DESIGN.md` — full design spec (approved 2026-09-11)
+- `Main.java` — entry point; JLine terminal setup, dumb-terminal guard, `solite [path]`
+- `ui/SimpleUI.java` — the explorer (398 lines): browse, groups, confirm
+- `ui/KeyInput.java` — Enter handling; drops the LF of a CRLF pair on Windows
+- `core/FileOrganizer.java` — `listEntries(dir, filter)`, recursive `groupFiles`,
+  `moveFiles` via an Action stack, `undoMove` (one level deep)
+- `core/Action.java`, `core/MoveAction.java` — command pattern, cross-filesystem
+  copy fallback, `move_log.txt` audit log
+- `core/MoveFailedException.java`, `core/UnreadableFolderException.java`
+- `scripts/solite`, `scripts/solite.cmd` — launchers for `PATH`
+- `archive/` — the previous DESIGN.md UI (TerminalApp, Theme, LayoutEngine,
+  ShadowPainter, ClickableRegion) plus its tests. **Not compiled.** Kept for
+  reference only; do not extend it.
+- `DESIGN.md` — the design spec for the archived UI. Historical, not the
+  current behaviour.
 
 ### Build
+
 ```bash
-./gradlew.bat build        # compile + test (39 tests, all green)
-./gradlew.bat run          # launch TUI: pick folder → gather → confirm → undo
+./gradlew build         # compile + test
+./gradlew test          # tests only
+./gradlew installCli    # build cli/solite.jar for the `solite` command
 ```
 
-### Tests (39 total, `./gradlew test` green)
-- `core/FileOrganizerTest` — groupFiles on mixed-ext temp dir, moveFiles + undoMove roundtrip
-- `ui/LayoutEngineTest` — breakpoint matrix 60/80/110/150, geometry, emergency mode, 200-size resize fuzz
-- `ui/ThemeTest` — palette values, capability ladder, dither glyph budget
-- `ui/ClickableRegionTest` — hit-testing, per-screen action coverage, scroll-by-3
-- `ui/TerminalAppLogicTest` — formatSize, shrinkPath, truncate, screen order
+**`./gradlew run` does not work.** Gradle hands the JVM a pipe rather than a
+terminal, JLine falls back to a dumb terminal, and solite exits with code 2.
+Install the CLI and run `solite` instead.
 
-## What's Next (post-v0.1 ideas)
+### Keys
 
-### Phase 2 — Screens (Pick → Gather → Confirm)
-
-**Goal:** Build the 3 screens from DESIGN.md §6.
-
-#### Screen A — Pick (where to tidy)
-- List folders in a directory (default: `System.getProperty("user.home")`)
-- Type-to-filter (live as user types)
-- Enter selects folder, moves to Screen B
-- `q` quits
-- **Layout:** header 2 rows, footer 1 row (XS) or 2 rows (S/M/L), list fills rest
-- **Shadow:** L1 only on S+, no shadow on XS
-
-#### Screen B — Gather (the workhorse)
-- Left pane: groups Solite suggests (from `FileOrganizer.groupFiles`)
-- Right pane: preview (max 5 files from selected group, then `… N more`)
-- Bottom: numbered actions (1/2/3) — see DESIGN.md §6 for exact labels
-- Enter on a row = select group, show preview
-- Number keys 1/2/3 = fire action (1 = move, 2 = peek, 3 = skip)
-- `b` / Esc = back to Screen A
-- **Layout:** M/L = two panes (55% left, 45% right); S = one column with inline preview under selection
-- **Shadow:** L1+L2 on M+, L1 only on S, none on XS
-
-#### Screen C — Confirm (only for moves/deletes)
-- Two buttons: `[Enter] Yes, move` and `[n] No`
-- Plain language + size impact ("312 files → Photos/2024, frees ~410 MB")
-- Double-Enter for moves (first Enter shows confirm, second Enter applies)
-- Toast after apply: `✓ 312 moved · u undo` (leaf green, fades in 3s)
-- `u` = undo (one level deep, move back to original location)
-- **Layout:** centered modal, max 60% width, L1 shadow
-- **Shadow:** L1 only
-
-#### Implementation Notes
-- Extend `TerminalApp` to track current screen (enum: PICK, GATHER, CONFIRM)
-- Add a `renderScreen()` method that dispatches to screen-specific paint logic
-- Keyboard state machine: map keys to actions per screen (see DESIGN.md §7 keymap)
-- Mouse: extend `ClickableRegion` for each screen's clickable rows/buttons
-- Path state: track current folder (Screen A → B), current group (B → C)
-- Undo state: stack of (originalPath, movedPath) pairs, one level deep
-
-#### FileOrganizer Completion
-`core/FileOrganizer.java` backend logic is fully complete:
-- ✅ `listEntries(Path)` — lists children, sorts dirs first, handles filtering, throws `UnreadableFolderException`
-- ✅ `groupFiles(Path)` — groups by extension, returns `Group[]`, throws `UnreadableFolderException`
-- ✅ `moveFiles(List<Path>, Path)` — implemented using `MoveAction` (Action pattern)
-- ✅ `undoMove()` — implemented using `Action` stack
-- ✅ Filter/search for Screen A type-to-filter — implemented via `listEntries` string filter parameter
-
-### Phase 3 — Mouse + Polish
-
-**Goal:** Wire mouse support (DESIGN.md §7.1) + empty/error states.
-
-#### Mouse
-- `terminal.trackMouse(MouseTracking.Normal)` already enabled in Phase 1
-- Extend `TerminalApp` to handle `MouseEvent` via JLine's event handling
-- Hit-test against `ClickableRegion` list (one per screen)
-- Single click = select row, double click = activate (Enter), scroll wheel = move list by 3
-- Hover = paint row in `honey` + sync keyboard cursor
-
-#### Empty/Error States
-- Empty folder → `○ Nothing to tidy here. Nice.` + `b back`
-- Unreadable dir → `! Can't read this folder (permission). Pick another.`
-- No groups → `○ No files to organize. Pick another folder.`
-
-#### Toast System
-- One-line toast at bottom: `✓ 312 moved · u undo` in `leaf` green
-- Auto-fades in 3s (use a `ScheduledExecutorService` or simple counter)
-- Only one toast at a time (new toast replaces old)
-
-### Phase 4 — Tests + Commit
-
-**Goal:** Prove it works, commit v0.1.
-
-#### Tests (JUnit 5, in `src/test/java/solite/`)
-- **Breakpoint matrix:** test layout at 60/80/110/150 × 14/24/40 (assert correct breakpoint + geometry)
-- **Dither snapshot:** test shadow painter output (assert dot counts, not pixels)
-- **Dumb terminal:** assert no ANSI leaked beyond `\n` when theme is mono
-- **Resize fuzz:** random sizes, assert selection stable + no exception
-- **Mouse tests:** click on each screen's clickable regions, double-click activates, scroll wheel moves list, hover syncs keyboard cursor, mouse-off terminals still usable via keyboard
-- ✅ **FileOrganizer:** tested groupFiles on a temp dir with mixed extensions, tested moveFiles + undoMove roundtrip (Completed in `FileOrganizerTest.java`)
-
-#### Smoke Test
-```bash
-./gradlew.bat test         # must pass all of the above
-./gradlew.bat run          # manual: pick a folder, see groups, move a group, undo
+```
+↑ / ↓            move
+Enter / →        open the selected folder
+Backspace / ←    go to the parent folder
+..               the first row of every listing, Enter on it goes up
+o                group the current folder by extension
+Enter (groups)   ask about moving that group
+y / n            apply / cancel the move
+u                undo the last move
+q                quit
 ```
 
-#### Commit v0.1
-- `git commit -m "feat: v0.1 — 3 screens, mouse, tests"`
-- Tag: `git tag v0.1.0`
-- Push: `git push origin main --tags`
+Mouse: single click selects, a second click on the same row within 450ms opens
+(or asks, on the groups screen). Wheel scrolls three rows. Every mouse action
+has a keyboard equivalent.
+
+### Tests (29, `./gradlew test` green)
+
+- `core/FileOrganizerTest` — grouping on a mixed-extension temp dir, move + undo roundtrip
+- `ui/KeyInputTest` — one CRLF pair produces exactly one Enter
+- `ui/SimpleUITest` — paint at 100x30, 60x20, 40x15 and 0x0; every line fits the width;
+  emoji counted as two cells; icon chosen per extension; size formatting
+- `ui/SimpleUIConfirmTest` — `..` is always row 0; Enter on a group never moves files;
+  `y` moves, `n` changes nothing; undo restores files and deletes the empty folder;
+  Backspace/BS go up; single click selects and a double click opens
 
 ## Architecture Rules
 
-1. **No external UI frameworks** — JLine 3.30.0 only (no Lanterna, no curses wrappers)
-2. **No colors in logic** — Theme object owns palette; never hardcode `#FFC800` outside Theme
-3. **No block glyphs** — use `· : .` for dither, never `█ ▓ ▒ ░` (breaks on conhost)
-4. **Responsive or nothing** — every screen must reflow on resize; test at all 4 breakpoints
-5. **Mouse is optional** — every action must have a keyboard equivalent; never require mouse
-6. **Destructive = double-Enter** — moves/deletes always stage first, confirm second
-7. **Undo is one level deep** — track last move only, not full history
-
-## Design Constraints (from DESIGN.md)
-
-- **Palette:** ink #0B0A06, honey #FFC800, amber #8A6D00, wax #4A3D10, paper #F5EDD6, ash #9A917A, leaf #9DBE00, ember #FF5C00
-- **Dither:** L1 dust (~12%), L2 mist (~25%), L3 grain (40% max). Only `· : .` glyphs.
-- **Breakpoints:** XS <70, S 70–109, M 110–139, L 140+. Height <14 = emergency mode (plain list, no borders).
-- **Screens:** 3 only (Pick, Gather, Confirm). One question per screen, max 5 visible actions.
-- **Mouse:** first-class (DESIGN.md §7.1). `trackMouse(MouseTracking.Normal)` + hit-testing.
-- **Compat:** truecolor → 256 → 16 → mono ladder. Round→square→ASCII borders. No Nerd Fonts/emoji required.
+1. **JLine only** — no other UI framework, no curses wrappers
+2. **No absolute paths in the list** — the path belongs in the breadcrumb header
+3. **Names are truncated before styling** — count terminal cells, not chars, so
+   emoji never push a row past the edge
+4. **A move needs an explicit `y`** — Enter must never apply one, so a stray
+   keypress can't reorganise anything. `KeyInput` drops the CRLF second byte for
+   the same reason: one keypress must be one action
+5. **Mouse is optional** — every action has a keyboard equivalent
+6. **Undo is one level deep** — the last move only
+7. **`core/` is the backend** — the UI never calls `Files.move` directly, it
+   goes through `FileOrganizer`
 
 ## How to Contribute
 
-1. **Read DESIGN.md** — understand the full spec before coding
-2. **Pick a phase** — start with Phase 2 (screens) if unsure
-3. **Build incrementally** — test one screen at a time, commit often
-4. **Write tests** — Phase 4 is not optional; TUI v0.1 ships with tests
-5. **Commit as Debyte404** — `git config user.name "Debyte404"` and `git config user.email "ankit.byte.404@gmail.com"` in your local repo (do NOT push as a different account)
+1. Read this file, then `ui/SimpleUI.java` — it is one screen at a time
+2. Keep `SimpleUI` under 400 lines; if it grows, split by screen, don't bolt on
+3. Run `./gradlew build` before committing — 29 tests must stay green
+4. Commit as Debyte404: `git config user.name "Debyte404"` and
+   `git config user.email "ankit.byte.404@gmail.com"`
+5. Push to `Shiv-Branch`, never `main`
 
-## Questions?
+## Known Gaps
 
-If something in this file or DESIGN.md is unclear, open an issue or ask in the Discord thread where this was discussed. Do not guess — ask.
+- `moveFiles` takes an `overwrite` flag that is never used; an existing target
+  file is overwritten silently through the copy fallback
+- `undo` has no cross-filesystem fallback, so undoing a cross-volume move can fail
+- `move_log.txt` is written to the process working directory, so it lands in
+  whatever folder you launched from
+- No wide-character (CJK) width handling beyond emoji

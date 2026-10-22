@@ -201,4 +201,39 @@ class SimpleUIConfirmTest {
         assertTrue(out.contains(SimpleUI.BACK_ICON), "folders get a folder icon");
         assertFalse(out.contains(dir.toString()), "full paths must never be printed");
     }
+
+    @Test
+    void backspaceGoesToTheParent(@TempDir Path dir) throws Exception {
+        Path sub = dir.resolve("Child");
+        Files.createDirectory(sub);
+        SimpleUI ui = uiAt(sub);
+        Method m = SimpleUI.class.getDeclaredMethod("onBrowseKey", int.class);
+        m.setAccessible(true);
+        m.invoke(ui, 127);                 // DEL, what Windows sends for Backspace
+        assertEquals(dir.toAbsolutePath().normalize(),
+                ((Path) field(ui, "dir").get(ui)).toAbsolutePath().normalize());
+    }
+
+    @Test
+    void controlHAlsoGoesToTheParent(@TempDir Path dir) throws Exception {
+        Path sub = dir.resolve("Child");
+        Files.createDirectory(sub);
+        SimpleUI ui = uiAt(sub);
+        Method m = SimpleUI.class.getDeclaredMethod("onBrowseKey", int.class);
+        m.setAccessible(true);
+        m.invoke(ui, 8);                   // BS
+        assertEquals(dir.toAbsolutePath().normalize(),
+                ((Path) field(ui, "dir").get(ui)).toAbsolutePath().normalize());
+    }
+
+    @Test
+    void qQuitsAndEnterDoesNotQuit(@TempDir Path dir) throws Exception {
+        SimpleUI ui = uiAt(dir);
+        Method m = SimpleUI.class.getDeclaredMethod("onBrowseKey", int.class);
+        m.setAccessible(true);
+        m.invoke(ui, 'x');                 // a stray letter must not quit
+        assertEquals(true, field(ui, "running").get(ui));
+        m.invoke(ui, 'q');
+        assertEquals(false, field(ui, "running").get(ui));
+    }
 }

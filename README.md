@@ -7,7 +7,6 @@ A smart file organizer with a TUI (terminal user interface), written in Java.
 - **Java 17** (LTS)
 - **Gradle 9.2.0** — build system (wrapper included; no global install needed)
 - **JLine 3** — terminal UI: line editing, ANSI rendering
-- **Gson** — JSON persistence for the file index
 - **JUnit 5** — testing
 
 ## Layout
@@ -16,7 +15,9 @@ A smart file organizer with a TUI (terminal user interface), written in Java.
 src/main/java/solite/   main source
 src/test/java/solite/   tests
 build.gradle            build script
+scripts/                solite launchers (bash + cmd) for your PATH
 cli/                    installed fat jar (created by ./gradlew installCli)
+archive/                the old DESIGN.md UI — not compiled, kept for reference
 ```
 
 ## Install as a CLI command
@@ -85,8 +86,19 @@ Current: ~/Downloads/College
 ./gradlew build        compile + test
 ./gradlew test         run tests only
 ./gradlew installCli   build the standalone jar for the `solite` command
-./gradlew run          launch via gradle (inherits the caller's terminal)
+./gradlew run          does NOT work for the TUI (see note below)
 ```
+
+**`./gradlew run` will not launch the TUI.** Gradle gives the app a pipe, not a
+terminal, so JLine reports a dumb terminal and solite exits with code 2:
+
+```
+WARNING: Unable to create a system terminal, creating a dumb terminal
+solite: no interactive terminal detected (type=dumb).
+```
+
+Use `solite` (or `./gradlew installCli` first). `./gradlew build` and
+`./gradlew test` work normally.
 
 (On Windows: `gradlew.bat`)
 

@@ -1,5 +1,11 @@
 # Solite TUI — Design Proposal v0.1
 
+> **Status note:** this spec describes the original Hermes-yellow UI with
+> dithered shadows and four breakpoints. That implementation now lives in
+> `archive/` and is not compiled. The shipping app is the plain explorer in
+> `ui/SimpleUI.java`. This document is kept as the design history.
+
+
 > Hermes-yellow. Dithered calm. Simple enough for anyone. Fits any terminal.
 
 ## 1. Vision
