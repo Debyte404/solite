@@ -28,12 +28,21 @@ Like `opencode` or `antigravity`: one command, no gradle in the loop.
 ./gradlew fatJar            # just the standalone jar
 ```
 
-Then put `bin/solite` (bash) and `bin/solite.cmd` (cmd/PowerShell) on your `PATH`.
+Then put `scripts/solite` (bash) and `scripts/solite.cmd` (cmd/PowerShell) on your
+`PATH` — copy both into a folder that is already on it, e.g. `~/bin`:
+
+```
+cp scripts/solite scripts/solite.cmd ~/bin/
+```
+
 Once installed:
 
 ```
 solite                      # launches the TUI in the current terminal
 ```
+
+The TUI draws **inside the terminal you launch it from** — it fills the window
+rather than opening a new one.
 
 The launcher resolves the jar in this order: `$SOLITE_JAR`, `./solite.jar`
 next to the script, `<repo>/cli/solite.jar`, then

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# solite launcher — run the TUI with one command, like `opencode` / `antigravity`.
+# Resolves the fat jar next to this script, then hands the terminal straight to java.
+set -euo pipefail
+
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do
+  DIR="$(cd -P "$(dirname "$SELF")" && pwd)"
+  SELF="$(readlink "$SELF")"
+  [[ "$SELF" != /* ]] && SELF="$DIR/$SELF"
+done
+HERE="$(cd -P "$(dirname "$SELF")" && pwd)"
+
+JAR="${SOLITE_JAR:-}"
+if [ -z "$JAR" ]; then
+  for candidate in "$HERE/solite.jar" \
+                   "$HERE/../solite/cli/solite.jar" \
+                   "$HOME/solite/build/libs/solite-0.1.0-all.jar"; do
+    if [ -f "$candidate" ]; then JAR="$candidate"; break; fi
+  done
+fi
+
+if [ -z "$JAR" ] || [ ! -f "$JAR" ]; then
+  echo "solite: jar not found. Build it with: (cd ~/solite && ./gradlew installCli)" >&2
+  exit 1
+fi
+
+# java.exe is a native Windows binary: it does not understand MSYS /c/... paths.
+if command -v cygpath >/dev/null 2>&1; then
+  JAR="$(cygpath -w "$JAR")"
+fi
+
+if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+  JAVA="$JAVA_HOME/bin/java"
+elif command -v java >/dev/null 2>&1; then
+  JAVA="java"
+elif [ -x "$HOME/jdk17/jdk-17.0.20.1+1/bin/java.exe" ]; then
+  JAVA="$HOME/jdk17/jdk-17.0.20.1+1/bin/java.exe"
+else
+  echo "solite: no java found. Set JAVA_HOME or install JDK 17." >&2
+  exit 1
+fi
+
+exec "$JAVA" -Djline.terminal=jline -jar "$JAR" "$@"
