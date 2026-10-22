@@ -16,7 +16,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.IntConsumer;
 
 /**
  * Main TUI application. Owns the terminal, theme, layout engine, and display.
@@ -61,6 +63,7 @@ public final class TerminalApp {
 
     // ---- UI chrome ----
     private String currentToast = null;
+    private ScheduledFuture<?> toastTask = null;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     private List<ClickableRegion> clickRegions = new ArrayList<>();
 
@@ -141,10 +144,21 @@ public final class TerminalApp {
             return false; // plain Esc
         }
         int c1 = reader.read();
+
+        // SS3 sequences: ESC O A/B/C/D — application-mode cursor keys
+        if (c1 == 'O') {
+            if (!reader.ready()) {
+                onEscapeKey();
+                return true;
+            }
+            return applyCursorKey(reader.read());
+        }
         if (c1 != '[') {
-            onEscapeKey();
-            if (c1 >= 0) {
+            // Alt+<char>: deliver the char, don't navigate away
+            if (c1 >= 0 && !Character.isISOControl(c1)) {
                 onKey(c1);
+            } else {
+                onEscapeKey();
             }
             return true;
         }
@@ -153,16 +167,100 @@ public final class TerminalApp {
             return true;
         }
         int c2 = reader.read();
-        if (c2 == 'M' && reader.ready()) {
+
+        // Arrow + navigation keys — CSI A/B/C/D/H/F/Z
+        if (c2 == 'A' || c2 == 'B' || c2 == 'C' || c2 == 'D'
+                || c2 == 'H' || c2 == 'F' || c2 == 'Z') {
+            return applyCursorKey(c2);
+        }
+
+        // X10 mouse report: ESC [ M b x y
+        if (c2 == 'M') {
+            if (!reader.ready()) {
+                onEscapeKey();
+                return true;
+            }
             int b = reader.read() - 32;
-            int x = reader.read() - 33; // 1-based -> 0-based
-            int y = reader.read() - 33;
+            int x = Math.max(0, reader.read() - 33); // 1-based -> 0-based
+            int y = Math.max(0, reader.read() - 33);
             onMouse(b, x, y);
             return true;
         }
+
+        // SGR mouse report: ESC [ < b ; x ; y M|m — what Windows Terminal sends
+        if (c2 == '<') {
+            StringBuilder buf = new StringBuilder();
+            while (reader.ready()) {
+                int ch = reader.read();
+                if (ch == 'M') {
+                    parseSgrMouse(buf.toString(), false);
+                    return true;
+                }
+                if (ch == 'm') {
+                    parseSgrMouse(buf.toString(), true);
+                    return true;
+                }
+                buf.append((char) ch);
+            }
+            parseSgrMouse(buf.toString(), false);
+            return true;
+        }
+
         // Unknown escape sequence — treat as Esc (back)
         onEscapeKey();
         return true;
+    }
+
+    /** Dispatch a cursor/navigation key (A up, B down, C right, D left). */
+    private boolean applyCursorKey(int c) {
+        switch (c) {
+            case 'A':
+                moveCursor(-1);
+                return true;
+            case 'B':
+                moveCursor(1);
+                return true;
+            case 'C':
+                // right = activate, same as Enter on the highlighted row
+                if (currentScreen == Screen.PICK || currentScreen == Screen.GATHER) {
+                    onEnter();
+                }
+                return true;
+            case 'D':
+                onEscapeKey();
+                return true;
+            case 'H':
+                moveCursorTo(0);
+                return true;
+            case 'F':
+                moveCursorTo(Integer.MAX_VALUE);
+                return true;
+            case 'Z':
+                moveCursor(-1); // shift-tab behaves like up
+                return true;
+            default:
+                onEscapeKey();
+                return true;
+        }
+    }
+
+    /** Parse "b;x;y" from an SGR mouse report. release=true means button-up. */
+    private void parseSgrMouse(String params, boolean release) {
+        String[] parts = params.split(";");
+        if (parts.length < 3) {
+            return;
+        }
+        try {
+            int b = Integer.parseInt(parts[0].trim());
+            int x = Math.max(0, Integer.parseInt(parts[1].trim()) - 1);
+            int y = Math.max(0, Integer.parseInt(parts[2].trim()) - 1);
+            if (release) {
+                return; // click semantics fire on press, not on release
+            }
+            onMouse(b, x, y);
+        } catch (NumberFormatException ignored) {
+            // malformed report — ignore instead of killing the event loop
+        }
     }
 
     private void onEscapeKey() {
@@ -180,82 +278,161 @@ public final class TerminalApp {
     // ================= keyboard =================
 
     private void onKey(int key) {
+        // Ctrl+C — always quits cleanly
+        if (key == 3) {
+            running = false;
+            return;
+        }
+
+        switch (currentScreen) {
+            case PICK:
+                onKeyPick(key);
+                return;
+            case GATHER:
+                onKeyGather(key);
+                return;
+            case CONFIRM:
+                onKeyConfirm(key);
+                return;
+            default:
+                return;
+        }
+    }
+
+    /** Screen A: type-to-filter owns almost every letter; commands need an empty filter. */
+    private void onKeyPick(int key) {
+        boolean typing = !pickFilter.isEmpty();
+
         switch (key) {
-            case 3: // Ctrl+C — always quits cleanly
-                running = false;
+            case 13:
+            case 10:
+                onEnter();
+                return;
+            case 27:
+                if (typing) {
+                    pickFilter = "";
+                    pickCursor = 0;
+                    refreshPickEntries();
+                    repaint();
+                } else {
+                    onEscapeKey();
+                }
+                return;
+            case 127:
+            case 8:
+                if (typing) {
+                    pickFilter = pickFilter.substring(0, pickFilter.length() - 1);
+                    pickCursor = 0;
+                    refreshPickEntries();
+                    repaint();
+                }
+                return;
+            case '?':
+                if (!typing) {
+                    showToast(" type to filter · Enter tidy · Esc clear · q quit ");
+                    return;
+                }
                 break;
             case 'q':
             case 'Q':
-                if (currentScreen == Screen.PICK) {
+                if (!typing) {
                     running = false;
+                    return;
                 }
                 break;
             case 'b':
             case 'B':
-                onEscapeKey();
-                break;
-            case '?':
-                showToast(" ↑↓ move · Enter open · 1/2/3 act · u undo · b back · q quit ");
-                break;
-            case ':':
-                // Type-a-path: append to filter as a path hint; user confirms with Enter
-                if (currentScreen == Screen.PICK) {
-                    pickFilter = "";
-                    showToast(" Type a folder name to filter, Enter to tidy ");
+                if (!typing) {
+                    onEscapeKey();
+                    return;
                 }
                 break;
-            case 13: // Enter
-            case 10:
-                onEnter();
-                break;
-            case 'u':
-            case 'U':
-                onUndo();
-                break;
-            case 'n':
-            case 'N':
-                if (currentScreen == Screen.CONFIRM) {
-                    pending = null;
-                    currentScreen = Screen.GATHER;
-                    repaint();
+            case 'k':
+                if (!typing) {
+                    moveCursor(-1);
+                    return;
                 }
                 break;
-            case '1':
-            case '2':
-            case '3':
-                if (currentScreen == Screen.GATHER) {
-                    onGatherAction(key - '0');
-                }
-                break;
-            case 's':
-            case 'S':
-                if (currentScreen == Screen.GATHER) {
-                    onGatherAction(3); // skip = action 3
+            case 'j':
+                if (!typing) {
+                    moveCursor(1);
+                    return;
                 }
                 break;
             default:
-                if (currentScreen == Screen.PICK && key >= 32 && key <= 126) {
-                    pickFilter += (char) key;
-                    pickCursor = 0;
-                    refreshPickEntries();
-                    repaint();
-                } else if (key == 127 || key == 8) { // Backspace
-                    if (currentScreen == Screen.PICK && !pickFilter.isEmpty()) {
-                        pickFilter = pickFilter.substring(0, pickFilter.length() - 1);
-                        pickCursor = 0;
-                        refreshPickEntries();
-                        repaint();
-                    }
-                } else if (currentScreen == Screen.PICK || currentScreen == Screen.GATHER) {
-                    // Arrow keys arrive as A/B (after ESC [) in raw mode without keymap;
-                    // JLine reader usually translates them. Handle vim twins too.
-                    if (key == 'k' || key == 65) {
-                        moveCursor(-1);
-                    } else if (key == 'j' || key == 66) {
-                        moveCursor(1);
-                    }
-                }
                 break;
+        }
+
+        if (key >= 32 && key <= 126) {
+            pickFilter += (char) key;
+            pickCursor = 0;
+            refreshPickEntries();
+            repaint();
+        }
+    }
+
+    /** Screen B: numbered actions, skip, undo, back. */
+    private void onKeyGather(int key) {
+        switch (key) {
+            case 13:
+            case 10:
+                onEnter();
+                return;
+            case 27:
+            case 'b':
+            case 'B':
+                onEscapeKey();
+                return;
+            case '?':
+                showToast(" ↑↓ groups · 1 move · 2 peek · 3 skip · u undo · b back ");
+                return;
+            case 'u':
+            case 'U':
+                onUndo();
+                return;
+            case '1':
+            case '2':
+            case '3':
+                onGatherAction(key - '0');
+                return;
+            case 's':
+            case 'S':
+                onGatherAction(3); // skip = action 3
+                return;
+            case 'k':
+                moveCursor(-1);
+                return;
+            case 'j':
+                moveCursor(1);
+                return;
+            default:
+                return;
+        }
+    }
+
+    /** Screen C: double-Enter to apply, n/Esc to abort, u to undo the last move. */
+    private void onKeyConfirm(int key) {
+        switch (key) {
+            case 13:
+            case 10:
+                applyPendingMove();
+                return;
+            case 27:
+            case 'n':
+            case 'N':
+                pending = null;
+                currentScreen = Screen.GATHER;
+                repaint();
+                return;
+            case 'u':
+            case 'U':
+                onUndo();
+                return;
+            case '?':
+                showToast(" Enter applies · n cancels · u undo ");
+                return;
+            default:
+                return;
         }
     }
 
@@ -270,6 +447,30 @@ public final class TerminalApp {
                 groupCursor = Math.floorMod(groupCursor + delta, groups.size());
                 repaint();
             }
+        }
+    }
+
+    /** Jump the cursor to an absolute index (Home / End). */
+    private void moveCursorTo(int index) {
+        if (currentScreen == Screen.PICK) {
+            if (!pickEntries.isEmpty()) {
+                pickCursor = Math.min(Math.max(index, 0), pickEntries.size() - 1);
+                repaint();
+            }
+        } else if (currentScreen == Screen.GATHER) {
+            if (!groups.isEmpty()) {
+                groupCursor = Math.min(Math.max(index, 0), groups.size() - 1);
+                repaint();
+            }
+        }
+    }
+
+    /** Parse the numeric suffix of a mouse action id; ignore malformed ids. */
+    static void parseIndex(String action, int prefixLen, IntConsumer consumer) {
+        try {
+            consumer.accept(Integer.parseInt(action.substring(prefixLen)));
+        } catch (NumberFormatException | IndexOutOfBoundsException ignored) {
+            // malformed id — no-op instead of crashing the event loop
         }
     }
 
@@ -419,22 +620,25 @@ public final class TerminalApp {
             moveCursor(wheelDown ? 3 : -3); // scroll = 3 rows, natural direction
             return;
         }
-        if (action.startsWith("pick:")) {
-            int idx = Integer.parseInt(action.substring(5));
-            if (idx >= 0 && idx < pickEntries.size()) {
-                pickCursor = idx;
-                repaint();
-            }
-        } else if (action.startsWith("group:")) {
-            int idx = Integer.parseInt(action.substring(6));
-            if (idx >= 0 && idx < groups.size()) {
-                groupCursor = idx; // single click = select (hover syncs keyboard)
-                repaint();
-            }
-        } else if (action.equals("pick:open")) {
+        if (action.equals("pick:open")) {
             onEnter();
         } else if (action.equals("back")) {
             onEscapeKey();
+        } else if (action.startsWith("pick:")) {
+            // Guard: malformed ids must not kill the event loop
+            parseIndex(action, 5, idx -> {
+                if (idx >= 0 && idx < pickEntries.size()) {
+                    pickCursor = idx;
+                    repaint();
+                }
+            });
+        } else if (action.startsWith("group:")) {
+            parseIndex(action, 6, idx -> {
+                if (idx >= 0 && idx < groups.size()) {
+                    groupCursor = idx; // single click = select (hover syncs keyboard)
+                    repaint();
+                }
+            });
         } else if (action.equals("act:1")) {
             if (currentScreen == Screen.GATHER) {
                 onGatherAction(1);
@@ -470,8 +674,13 @@ public final class TerminalApp {
 
     // ================= paint =================
 
-    /** Repaint the entire frame. */
-    private void repaint() {
+    /** Coloured style when the terminal supports colour; plain otherwise (mono). */
+    private AttributedStyle fg(int color) {
+        return theme.colored ? AttributedStyle.DEFAULT.foreground(color) : AttributedStyle.DEFAULT;
+    }
+
+    /** Repaint the entire frame. Synchronized: the toast timer paints from another thread. */
+    private synchronized void repaint() {
         // Check for resize
         Size size = terminal.getSize();
         if (size != null && (size.getColumns() != layout.width || size.getRows() != layout.height)) {
@@ -499,24 +708,24 @@ public final class TerminalApp {
         if (layout.isEmergency()) {
             String line = emergencyLine(y, width);
             sb.append(line);
-            style = AttributedStyle.DEFAULT.foreground(theme.paper);
+            style = fg(theme.paper);
         } else if (y == 0) {
             // Banner row 0
             String title = "● solite — " + currentScreen.name().toLowerCase() + " · " + shrinkPath(currentDir, Math.max(10, width - 20));
             sb.append(truncate(title, width));
-            style = AttributedStyle.DEFAULT.foreground(theme.honey).bold();
+            style = fg(theme.honey).bold();
         } else if (y == 1) {
             // Banner wash row 1
             sb.append(buildBannerWash(width));
-            style = AttributedStyle.DEFAULT.foreground(theme.wax);
+            style = fg(theme.wax);
         } else if (y >= layout.height - layout.footerRows) {
             // Footer rows
             String footer = footerText(y == layout.height - layout.footerRows);
             sb.append(truncate(footer, width));
             if (currentToast != null && y == layout.height - layout.footerRows) {
-                style = AttributedStyle.DEFAULT.foreground(theme.leaf);
+                style = fg(theme.leaf);
             } else {
-                style = AttributedStyle.DEFAULT.foreground(theme.ash);
+                style = fg(theme.ash);
             }
         } else if (currentScreen == Screen.PICK) {
             AttributedStyle s = pickRow(y, width, sb);
@@ -550,17 +759,17 @@ public final class TerminalApp {
         if (row == 0) {
             String folderLine = " ┌─ Folder " + shrinkPath(currentDir, Math.max(8, width - 14));
             sb.append(truncate(folderLine, width));
-            return AttributedStyle.DEFAULT.foreground(theme.amber);
+            return fg(theme.amber);
         }
         if (row == 1) {
             String filterLine = " │ Filter: " + pickFilter + "_";
             sb.append(truncate(filterLine, width));
             clickRegions.add(new ClickableRegion(0, y, width, 1, "pick:open"));
-            return AttributedStyle.DEFAULT.foreground(theme.paper);
+            return fg(theme.paper);
         }
         if (gatherError != null && row == 2) {
             sb.append(truncate(" " + gatherError, width));
-            return AttributedStyle.DEFAULT.foreground(theme.ember);
+            return fg(theme.ember);
         }
         int listStart = (gatherError != null) ? 3 : 2;
         int idx = row - listStart;
@@ -577,17 +786,17 @@ public final class TerminalApp {
             sb.append(truncate(line, width));
             clickRegions.add(new ClickableRegion(0, y, width, 1, "pick:" + idx));
             if (sel) {
-                return AttributedStyle.DEFAULT.foreground(theme.honey).bold();
+                return fg(theme.honey).bold();
             }
-            return AttributedStyle.DEFAULT.foreground(theme.paper);
+            return fg(theme.paper);
         }
         if (pickEntries.isEmpty() && row == listStart) {
             sb.append(" ○ Nothing to tidy here. Nice.");
-            return AttributedStyle.DEFAULT.foreground(theme.ash);
+            return fg(theme.ash);
         }
         if (idx == maxRows && pickEntries.size() > maxRows) {
             sb.append(truncate(" … " + (pickEntries.size() - maxRows) + " more", width));
-            return AttributedStyle.DEFAULT.foreground(theme.ash);
+            return fg(theme.ash);
         }
         return null;
     }
@@ -599,7 +808,7 @@ public final class TerminalApp {
         if (gatherError != null && row == 0) {
             sb.append(truncate(" " + gatherError + "  [b] back", width));
             clickRegions.add(new ClickableRegion(0, y, width, 1, "back"));
-            return AttributedStyle.DEFAULT.foreground(theme.ember);
+            return fg(theme.ember);
         }
         int listStart = (gatherError != null) ? 1 : 0;
 
@@ -640,13 +849,13 @@ public final class TerminalApp {
             sb.append(truncate(padRight(left, leftW) + " " + right, width));
             clickRegions.add(new ClickableRegion(0, y, leftW + 1, 1, "group:" + row));
             if (sel) {
-                return AttributedStyle.DEFAULT.foreground(theme.honey).bold();
+                return fg(theme.honey).bold();
             }
-            return AttributedStyle.DEFAULT.foreground(theme.paper);
+            return fg(theme.paper);
         }
         if (row == maxRows && groups.size() > maxRows) {
             sb.append(truncate(" … " + (groups.size() - maxRows) + " more groups", width));
-            return AttributedStyle.DEFAULT.foreground(theme.ash);
+            return fg(theme.ash);
         }
         AttributedStyle s = gatherActions(row - maxRows - 1, width, sb, y);
         return s;
@@ -666,9 +875,9 @@ public final class TerminalApp {
             sb.append(truncate(line, width));
             clickRegions.add(new ClickableRegion(0, y, width, 1, "group:" + row));
             if (sel) {
-                return AttributedStyle.DEFAULT.foreground(theme.honey).bold();
+                return fg(theme.honey).bold();
             }
-            return AttributedStyle.DEFAULT.foreground(theme.paper);
+            return fg(theme.paper);
         }
         int after = row - Math.min(maxRows, groups.size());
         if (!groups.isEmpty() && after == 0) {
@@ -687,12 +896,12 @@ public final class TerminalApp {
                 pv.append(" … ").append(files.size() - 5).append(" more");
             }
             sb.append(truncate(pv.toString(), width));
-            return AttributedStyle.DEFAULT.foreground(theme.ash);
+            return fg(theme.ash);
         }
         if (groups.size() > maxRows && after == (groups.isEmpty() ? 0 : 1)
                 && row < groups.size()) {
             sb.append(truncate(" … " + (groups.size() - maxRows) + " more", width));
-            return AttributedStyle.DEFAULT.foreground(theme.ash);
+            return fg(theme.ash);
         }
         int actionRow = after - 1;
         return gatherActions(actionRow, width, sb, y);
@@ -708,17 +917,17 @@ public final class TerminalApp {
                     : " > [1] Move   Enter ✓";
             sb.append(truncate(label, width));
             clickRegions.add(new ClickableRegion(0, y, width, 1, "act:1"));
-            return AttributedStyle.DEFAULT.foreground(theme.honey);
+            return fg(theme.honey);
         }
         if (actionRow == 1) {
             sb.append(truncate("   [2] Peek inside                         →", width));
             clickRegions.add(new ClickableRegion(0, y, width, 1, "act:2"));
-            return AttributedStyle.DEFAULT.foreground(theme.amber);
+            return fg(theme.amber);
         }
         if (actionRow == 2) {
             sb.append(truncate("   [3] Skip this group                     s", width));
             clickRegions.add(new ClickableRegion(0, y, width, 1, "act:3"));
-            return AttributedStyle.DEFAULT.foreground(theme.amber);
+            return fg(theme.amber);
         }
         return null;
     }
@@ -736,34 +945,34 @@ public final class TerminalApp {
 
         if (y == cy - 2) {
             sb.append(truncate(pad + "┌─ Move? " + "─".repeat(Math.max(0, modalW - 10)) + "┐", width));
-            return AttributedStyle.DEFAULT.foreground(theme.amber);
+            return fg(theme.amber);
         }
         if (y == cy - 1) {
             String what = pending != null
                     ? pending.group.getFiles().size() + " files → " + shrinkPath(pending.targetDir, modalW - 6)
                     : "Nothing staged";
             sb.append(truncate(pad + "│ " + what, width));
-            return AttributedStyle.DEFAULT.foreground(theme.paper);
+            return fg(theme.paper);
         }
         if (y == cy) {
             String impact = pending != null ? "Frees ~" + formatSize(pending.group.getTotalSize()) + " of clutter" : "";
             sb.append(truncate(pad + "│ " + impact, width));
-            return AttributedStyle.DEFAULT.foreground(theme.ash);
+            return fg(theme.ash);
         }
         if (y == cy + 1) {
             sb.append(truncate(pad + "│", width));
-            return AttributedStyle.DEFAULT.foreground(theme.amber);
+            return fg(theme.amber);
         }
         if (y == cy + 2) {
             sb.append(truncate(pad + "│ [Enter] Yes, move  [n] No", width));
             int bx = left + 3;
             clickRegions.add(new ClickableRegion(bx, y, 16, 1, "confirm:yes"));
             clickRegions.add(new ClickableRegion(bx + 17, y, 7, 1, "confirm:no"));
-            return AttributedStyle.DEFAULT.foreground(theme.honey).bold();
+            return fg(theme.honey).bold();
         }
         if (y == cy + 3) {
             sb.append(truncate(pad + "└" + "─".repeat(Math.max(0, modalW - 2)) + "┘", width));
-            return AttributedStyle.DEFAULT.foreground(theme.amber);
+            return fg(theme.amber);
         }
         return null;
     }
@@ -826,9 +1035,16 @@ public final class TerminalApp {
     /** Multithreading implementation for Toasts: one at a time, fades in 3s. */
     private void showToast(String message) {
         this.currentToast = message;
+        // A new toast replaces the old one, so its pending fade must be cancelled
+        // — otherwise the older timer clears the newer message early.
+        if (toastTask != null) {
+            toastTask.cancel(false);
+        }
         repaint();
-        scheduler.schedule(() -> {
-            this.currentToast = null;
+        toastTask = scheduler.schedule(() -> {
+            synchronized (this) {
+                this.currentToast = null;
+            }
             repaint();
         }, 3, TimeUnit.SECONDS);
     }

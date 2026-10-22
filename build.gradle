@@ -39,3 +39,31 @@ application {
 test {
     useJUnitPlatform()
 }
+
+// Standalone runnable jar — `java -jar build/libs/solite-0.1.0-all.jar`
+// This is what the `solite` launcher on PATH uses (same idea as opencode /
+// antigravity: one command, no gradle in the loop).
+tasks.register('fatJar', Jar) {
+    group = 'build'
+    description = 'Build a self-contained runnable jar for the `solite` CLI.'
+    archiveClassifier = 'all'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes 'Main-Class': 'solite.Main'
+    }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    with jar
+}
+
+// `./gradlew installCli` copies the fat jar next to the launcher scripts.
+tasks.register('installCli', Copy) {
+    group = 'build'
+    description = 'Build the fat jar and refresh the local CLI install dir.'
+    dependsOn 'fatJar'
+    from layout.buildDirectory.file("libs/solite-${version}-all.jar")
+    into "${rootDir}/cli"
+    rename { 'solite.jar' }
+}
+

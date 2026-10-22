@@ -18,6 +18,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Local CLI install (fat jar lives here; rebuild with `gradlew installCli`)
+cli/
+
 # Local config / runtime data (organizer index, settings)
 *.solite-index
 local.properties
