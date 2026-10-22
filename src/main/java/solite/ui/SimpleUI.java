@@ -4,7 +4,6 @@ import solite.core.FileOrganizer;
 import org.jline.terminal.Terminal;
 
 import java.io.IOException;
-import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -31,13 +30,11 @@ public final class SimpleUI {
     private Screen screen = Screen.BROWSE;
     private Path dir = Paths.get(System.getProperty("user.home"));
     private List<Path> entries = List.of();
-    private int cursor = 0;
+    private int cursor = 0;   private String filter = "";
     private List<FileOrganizer.Group> groups = List.of();
-    private int groupCursor = 0;
-    private String message = "";
+    private int groupCursor = 0;   private String message = "";
     private Path lastTarget;
-    private long lastClickAt = 0;
-    private int lastClickRow = -1;
+    private long lastClickAt = 0;   private int lastClickRow = -1;
     private boolean running = true;
     public SimpleUI(Terminal terminal) {
         this(terminal, Paths.get(System.getProperty("user.home")));
@@ -56,8 +53,7 @@ public final class SimpleUI {
         } catch (Exception ignored) {
             // no mouse: every action still has a key
         }
-        loadEntries();
-        draw();
+        loadEntries(); draw();
         boolean lastWasCr = false;
         while (running) {
             try {
@@ -79,11 +75,11 @@ public final class SimpleUI {
         terminal.writer().flush();
     }
     private void handleEscape() throws IOException {
-        Reader r = terminal.reader();
-        if (!r.ready()) { goUp(); return; }
+        java.io.Reader r = terminal.reader();
+        if (!r.ready()) { escapeOut(); return; }
         int c1 = r.read();
         if (c1 == 'O') { if (r.ready()) arrow(r.read()); return; }
-        if (c1 != '[' || !r.ready()) { goUp(); return; }
+        if (c1 != '[' || !r.ready()) { escapeOut(); return; }
         int c2 = r.read();
         if (c2 >= 'A' && c2 <= 'D') { arrow(c2); return; }
         if (c2 == 'M' && r.ready()) {
@@ -92,10 +88,10 @@ public final class SimpleUI {
         } else if (c2 == '<') {
             sgrMouse(r);
         } else {
-            goUp();
+            escapeOut();
         }
     }
-    private void sgrMouse(Reader r) throws IOException {
+    private void sgrMouse(java.io.Reader r) throws IOException {
         StringBuilder buf = new StringBuilder();
         while (r.ready()) {
             int ch = r.read();
@@ -103,13 +99,9 @@ public final class SimpleUI {
             if (ch == 'M') {
                 String[] p = buf.toString().split(";");
                 if (p.length != 3) return;
-                try {
-                    onMouse(Integer.parseInt(p[0].trim()),
-                            Math.max(0, Integer.parseInt(p[1].trim()) - 1),
-                            Math.max(0, Integer.parseInt(p[2].trim()) - 1));
-                } catch (NumberFormatException ignored) {
-                    // malformed report
-                }
+                try { onMouse(Integer.parseInt(p[0].trim()), Math.max(0, Integer.parseInt(p[1].trim()) - 1),
+                              Math.max(0, Integer.parseInt(p[2].trim()) - 1)); }
+                catch (NumberFormatException ignored) { /* malformed report */ }
                 return;
             }
             buf.append((char) ch);
@@ -133,6 +125,7 @@ public final class SimpleUI {
             return;
         }
         int index = y - LIST_TOP;
+        if (!filter.isEmpty()) index -= 1;          // the filter line pushes rows down
         if (index < 0 || index >= visibleRows()) return;
         if (screen == Screen.BROWSE) {
             if (index >= itemCount()) return;
@@ -147,15 +140,30 @@ public final class SimpleUI {
         lastClickAt = now;
         if (twice) activate();
     }
+    /** Esc: clear the filter if there is one, otherwise leave the folder. */
+    private void escapeOut() {
+        if (!filter.isEmpty()) { filter = ""; cursor = 0; loadEntries(); }
+        else goUp();
+    }
     private void onBrowseKey(int key) {
-        if (key == 127 || key == 8) { goUp(); return; }
+        if (key == 127 || key == 8) {
+            if (!filter.isEmpty()) { filter = filter.substring(0, filter.length() - 1); cursor = 0; loadEntries(); }
+            else goUp();
+            return;
+        }
+        if (!filter.isEmpty()) { typeChar(key); return; }
         switch (key) {
             case 'k' -> move(-1);
             case 'j' -> move(1);
             case 'o', 'O' -> organiseHere();
             case 'q', 'Q' -> running = false;
-            default -> { }
+            default -> typeChar(key);
         }
+    }
+
+    /** Fuzzy filtering: a printable key narrows the list immediately. */
+    private void typeChar(int key) {
+        if (key >= 32 && key <= 126) { filter += (char) key; cursor = 0; loadEntries(); }
     }
     private void onGroupsKey(int key) {
         switch (key) {
@@ -183,8 +191,7 @@ public final class SimpleUI {
         else message = "That is a file - press o to organise this folder.";
     }
     private void open(Path p) {
-        dir = p; cursor = 0; message = "";
-        loadEntries();
+        dir = p; cursor = 0; filter = ""; message = ""; loadEntries();
     }
     private void goUp() {
         if (screen == Screen.CONFIRM) { screen = Screen.GROUPS; message = CANCELLED; return; }
@@ -205,12 +212,11 @@ public final class SimpleUI {
     }
     void loadEntries() {
         try {
-            entries = organizer.listEntries(dir, "");
+            entries = organizer.listEntries(dir, filter);
             if (cursor >= itemCount()) cursor = Math.max(0, itemCount() - 1);
             message = "";
         } catch (IOException e) {
-            entries = List.of(); cursor = 0;
-            message = "Can't read this folder (permission).";
+            entries = List.of(); cursor = 0; message = "Can't read this folder (permission).";
         }
     }
     void organiseHere() {
@@ -246,12 +252,8 @@ public final class SimpleUI {
             lastTarget = target;
             message = "Moved " + n + " files into " + g.getName() + "/ (" + size + ").  u undo";
             reloadGroups();
-            screen = groups.isEmpty() ? Screen.BROWSE : Screen.GROUPS;
-            loadEntries();
-        } catch (IOException e) {
-            message = "Move failed: " + e.getMessage();
-            screen = Screen.GROUPS;
-        }
+            screen = groups.isEmpty() ? Screen.BROWSE : Screen.GROUPS; loadEntries();
+        } catch (IOException e) { message = "Move failed: " + e.getMessage(); screen = Screen.GROUPS; }
     }
     private void cancel() {
         screen = Screen.GROUPS;
@@ -265,17 +267,12 @@ public final class SimpleUI {
                 catch (IOException ignored) { /* empty folder left behind is harmless */ }
                 lastTarget = null;
             }
-            message = "Undone. Files are back.";
-            reloadGroups();
+            message = "Undone. Files are back."; reloadGroups();
             if (groups.isEmpty()) { screen = Screen.BROWSE; loadEntries(); }
-        } catch (IOException e) {
-            message = "Undo failed: " + e.getMessage();
-        }
+        } catch (IOException e) { message = "Undo failed: " + e.getMessage(); }
     }
-    int cols() { int w = terminal.getWidth(); return w > 0 ? w : 80; }
-    int rows() { int h = terminal.getHeight(); return h > 0 ? h : 24; }
-    int visibleRows() { return Math.max(1, rows() - LIST_TOP - FOOTER_ROWS); }
-    int confirmRow() { return Math.max(LIST_TOP, rows() - FOOTER_ROWS - 3); }
+    int cols() { int w = terminal.getWidth(); return w > 0 ? w : 80; }  int rows() { int h = terminal.getHeight(); return h > 0 ? h : 24; }
+    int visibleRows() { return Math.max(1, rows() - LIST_TOP - FOOTER_ROWS); }  int confirmRow() { return Math.max(LIST_TOP, rows() - FOOTER_ROWS - 3); }
     void draw() {
         int width = cols();
         int listRows = visibleRows();
@@ -306,6 +303,10 @@ public final class SimpleUI {
         };
     }
     private void drawBrowse(StringBuilder sb, int width, int listRows) {
+        if (!filter.isEmpty()) {
+            sb.append(truncate("  filter: " + filter + "_", width)).append('\n');
+            listRows = Math.max(1, listRows - 1);
+        }
         for (int i = 0; i < listRows; i++) {
             if (i >= itemCount()) { sb.append('\n'); continue; }
             String content = i == 0
@@ -327,7 +328,7 @@ public final class SimpleUI {
         FileOrganizer.Group g = selectedGroup();
         for (int i = LIST_TOP; i < confirmRow() - 2; i++) sb.append('\n');
         if (g == null) return;
-        sb.append(truncate("   " + g.getFiles().size() + " files  ->  " + g.getName() + "/", width)).append('\n');
+        sb.append(truncate("   Move " + g.getFiles().size() + " files into " + g.getName() + "/ ?", width)).append('\n');
         sb.append(truncate("   frees about " + formatSize(g.getTotalSize()), width)).append('\n');
         sb.append('\n').append(truncate("   [y] Yes, move        [n] No", width)).append('\n');
     }
@@ -383,7 +384,7 @@ public final class SimpleUI {
         if (cp == 0xFE0F || cp == 0x200D) return 0;
         return (cp > 0xFFFF && Character.getType(cp) == Character.OTHER_SYMBOL) ? 2 : 1;
     }
-    private static String pad(String s, int width) {
+    static String pad(String s, int width) {
         int gap = width - displayWidth(s);
         return gap <= 0 ? s : s + " ".repeat(gap);
     }

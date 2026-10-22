@@ -231,9 +231,13 @@ class SimpleUIConfirmTest {
         SimpleUI ui = uiAt(dir);
         Method m = SimpleUI.class.getDeclaredMethod("onBrowseKey", int.class);
         m.setAccessible(true);
-        m.invoke(ui, 'x');                 // a stray letter must not quit
+        m.invoke(ui, 'x');                 // a stray letter starts a filter, it must not quit
         assertEquals(true, field(ui, "running").get(ui));
-        m.invoke(ui, 'q');
-        assertEquals(false, field(ui, "running").get(ui));
+
+        SimpleUI fresh = uiAt(dir);        // empty filter: q really quits
+        Method m2 = SimpleUI.class.getDeclaredMethod("onBrowseKey", int.class);
+        m2.setAccessible(true);
+        m2.invoke(fresh, 'q');
+        assertEquals(false, field(fresh, "running").get(fresh));
     }
 }

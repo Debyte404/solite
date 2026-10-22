@@ -44,6 +44,7 @@ public class FileOrganizer {
     public List<Path> listEntries(Path dir, String filter) throws IOException {
         try (Stream<Path> stream = Files.list(dir)) {
             return stream
+                    .filter(p -> !isSkipped(p))
                     .filter(p -> filter == null || filter.isEmpty() || p.getFileName().toString().toLowerCase().contains(filter.toLowerCase()))
                     .sorted((p1, p2) -> {
                         boolean isDir1 = Files.isDirectory(p1);
@@ -83,13 +84,57 @@ public class FileOrganizer {
     private void collectFilesRecursively(Path dir, List<Path> allFiles) throws IOException {
         try (Stream<Path> stream = Files.list(dir)) {
             for (Path path : stream.collect(Collectors.toList())) {
+                if (isSkipped(path)) {
+                    continue;   // never walk into .git, node_modules, hidden system files
+                }
                 if (Files.isDirectory(path)) {
+                    if (isNoiseFolder(path)) {
+                        continue;   // build output, node_modules, caches
+                    }
                     collectFilesRecursively(path, allFiles); // Recursive call
                 } else if (Files.isRegularFile(path)) {
                     allFiles.add(path);
                 }
             }
         }
+    }
+
+    /**
+     * Hidden and system entries that must not be counted or moved: dotfiles
+     * (.git, .DS_Store), Windows shell noise, and anything the OS flags hidden.
+     */
+    public static boolean isSkipped(Path path) {
+        Path name = path.getFileName();
+        if (name == null) {
+            return false;
+        }
+        String n = name.toString();
+        if (n.isEmpty()) {
+            return false;
+        }
+        if (n.charAt(0) == '.') {
+            return true;
+        }
+        if (n.equalsIgnoreCase("desktop.ini") || n.equalsIgnoreCase("thumbs.db")
+                || n.equalsIgnoreCase("$RECYCLE.BIN") || n.equalsIgnoreCase("System Volume Information")) {
+            return true;
+        }
+        try {
+            return Files.isHidden(path);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /** Folders never worth scanning for files to organise. */
+    private static boolean isNoiseFolder(Path path) {
+        Path name = path.getFileName();
+        if (name == null) {
+            return false;
+        }
+        String n = name.toString();
+        return n.equals("node_modules") || n.equals("build") || n.equals("target")
+                || n.equals("__pycache__") || n.equals(".gradle");
     }
 
     private String getExtension(Path p) {
@@ -111,12 +156,18 @@ public class FileOrganizer {
         if (!Files.exists(targetDir)) {
             Files.createDirectories(targetDir);
         }
-        
+
         undoStack.clear(); // One level deep undo as per rules
-        
+
+        Path normalizedTarget = targetDir.toAbsolutePath().normalize();
         for (Path file : files) {
+            // Never move a file into the folder it already lives in.
+            Path parent = file.toAbsolutePath().normalize().getParent();
+            if (parent != null && parent.equals(normalizedTarget)) {
+                continue;
+            }
             Path targetFile = targetDir.resolve(file.getFileName());
-            Action action = new MoveAction(file, targetFile);
+            Action action = new MoveAction(file, targetFile, overwrite);
             action.execute();
             undoStack.add(action);
         }

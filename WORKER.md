@@ -20,7 +20,7 @@ dither, no alternate screen.
 
 ### Files
 - `Main.java` — entry point; JLine terminal setup, dumb-terminal guard, `solite [path]`
-- `ui/SimpleUI.java` — the explorer (398 lines): browse, groups, confirm
+- `ui/SimpleUI.java` — the explorer (399 lines): browse, groups, confirm
 - `ui/KeyInput.java` — Enter handling; drops the LF of a CRLF pair on Windows
 - `core/FileOrganizer.java` — `listEntries(dir, filter)`, recursive `groupFiles`,
   `moveFiles` via an Action stack, `undoMove` (one level deep)
@@ -64,15 +64,25 @@ Mouse: single click selects, a second click on the same row within 450ms opens
 (or asks, on the groups screen). Wheel scrolls three rows. Every mouse action
 has a keyboard equivalent.
 
-### Tests (29, `./gradlew test` green)
+### Tests (112, `./gradlew test` green)
 
 - `core/FileOrganizerTest` — grouping on a mixed-extension temp dir, move + undo roundtrip
+- `core/FileOrganizerMoreTest` — target folder creation (incl. nested), batch move,
+  one-level undo, sorting, filtering, Unknown bucket, size totals
+- `core/ScanAndCollisionTest` — hidden/system entries (.git, .DS_Store, desktop.ini,
+  Thumbs.db) never grouped or listed; node_modules/build/target never scanned;
+  collisions auto-rename to "name (1).ext" and never overwrite; undo after a
+  collision restores the incoming file
 - `ui/KeyInputTest` — one CRLF pair produces exactly one Enter
 - `ui/SimpleUITest` — paint at 100x30, 60x20, 40x15 and 0x0; every line fits the width;
   emoji counted as two cells; icon chosen per extension; size formatting
 - `ui/SimpleUIConfirmTest` — `..` is always row 0; Enter on a group never moves files;
   `y` moves, `n` changes nothing; undo restores files and deletes the empty folder;
-  Backspace/BS go up; single click selects and a double click opens
+  Backspace/BS go up; a stray letter does not quit; single click selects, double opens
+- `ui/SimpleUIFilterTest` — typing filters instantly, Backspace trims before going up,
+  Esc clears the filter, the confirm screen states count + size
+- `ui/IconsAndFormatTest` — icon per extension (20 cases), size formatting,
+  emoji cell widths, truncation never splits an emoji
 
 ## Architecture Rules
 
@@ -99,9 +109,7 @@ has a keyboard equivalent.
 
 ## Known Gaps
 
-- `moveFiles` takes an `overwrite` flag that is never used; an existing target
-  file is overwritten silently through the copy fallback
-- `undo` has no cross-filesystem fallback, so undoing a cross-volume move can fail
 - `move_log.txt` is written to the process working directory, so it lands in
-  whatever folder you launched from
+  whatever folder you launched from (not always the repo root)
+- `overwrite=true` is an explicit replace; the default path always renames instead
 - No wide-character (CJK) width handling beyond emoji

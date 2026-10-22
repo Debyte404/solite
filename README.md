@@ -74,11 +74,17 @@ Current: ~/Downloads/College
 ```
 
 - Names only, never full paths; the path lives in the header.
+- Hidden and system entries (`.git`, `.DS_Store`, `desktop.ini`, `Thumbs.db`) are
+  skipped when scanning and hidden from the list.
+- Start typing to filter the list — no special key needed. Backspace trims the
+  filter before it goes up a folder.
 - `..` is always the first row, so going back never needs a shortcut.
 - Icons: folder, document, image, archive, audio, video, code, program.
 - Mouse: click selects, double click opens. Wheel scrolls.
-- `o` groups the current folder by extension; `Enter` on a group asks first,
-  and only `y` applies the move. `u` undoes the last move.
+- `o` groups the current folder by extension; `Enter` on a group asks first
+  (`Move 312 files into PDF/ ?` plus the size), and only `y` applies the move.
+- A target file that already exists is never overwritten: the move lands as
+  `name (1).ext` instead, and `u` puts it back exactly where it came from.
 
 ## Commands
 
@@ -105,7 +111,8 @@ Use `solite` (or `./gradlew installCli` first). `./gradlew build` and
 ## Status
 
 v0.2 — one explorer: names only, emoji icons, breadcrumb, `..` row on top,
-double-click, grouped moves with an explicit `y` to confirm. 26 tests green.
+double-click, fuzzy filtering, collision-safe moves, grouped moves with an
+explicit `y` to confirm. 112 tests green.
 
 The earlier DESIGN.md UI (themes, dithered shadows, four breakpoints, mouse
 regions) is kept in `archive/` — not compiled, kept for reference.
