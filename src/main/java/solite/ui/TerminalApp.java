@@ -73,10 +73,25 @@ public final class TerminalApp {
         this.terminal = terminal;
         this.display = new Display(terminal, true);
         this.theme = Theme.pick(terminal);
-        this.layout = new LayoutEngine(terminal.getWidth(), terminal.getHeight());
+        this.layout = new LayoutEngine(safeCols(terminal), safeRows(terminal));
+        // JLine's Display paints nothing until it has been told its size.
+        // Without this the whole TUI renders as a blank screen.
+        this.display.resize(layout.width, layout.height);
         this.shadowPainter = new ShadowPainter(terminal, theme);
         this.fileOrganizer = new FileOrganizer();
         refreshPickEntries();
+    }
+
+    /** Terminal width, with a sane fallback when the host reports 0. */
+    private static int safeCols(Terminal t) {
+        int w = t.getWidth();
+        return w > 0 ? w : 80;
+    }
+
+    /** Terminal height, with a sane fallback when the host reports 0. */
+    private static int safeRows(Terminal t) {
+        int h = t.getHeight();
+        return h > 0 ? h : 24;
     }
 
     // ================= event loop =================
@@ -683,8 +698,12 @@ public final class TerminalApp {
     private synchronized void repaint() {
         // Check for resize
         Size size = terminal.getSize();
-        if (size != null && (size.getColumns() != layout.width || size.getRows() != layout.height)) {
+        if (size != null && (size.getColumns() > 0 && size.getRows() > 0)
+                && (size.getColumns() != layout.width || size.getRows() != layout.height)) {
             layout = new LayoutEngine(size.getColumns(), size.getRows());
+            // The Display keeps its own size copy — it must be told too, or it
+            // silently paints nothing after the terminal is resized.
+            display.resize(layout.width, layout.height);
         }
 
         clickRegions = new ArrayList<>();
