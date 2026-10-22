@@ -51,6 +51,50 @@ next to the script, `<repo>/cli/solite.jar`, then
 **The TUI needs a real TTY.** Piped or dumb terminals exit with code 2 and an
 explanatory message — it will not pretend to work.
 
+## Usage — simple mode (default)
+
+Two screens, one question each. No mouse, no colours, no surprises.
+
+```
+solite                  start in your home folder
+solite D:\Downloads     start in a specific folder
+```
+
+**1. Pick** — where to tidy
+
+```
+↑ ↓            move
+a..z           type to filter  (Dow → Downloads)
+Enter          open this folder
+Backspace      go up one level (when the filter is empty)
+q              quit
+```
+
+**2. Groups** — what it found
+
+```
+↑ ↓            move
+Enter          ask to move this group
+u              undo the last move
+b              back to the folder list
+q              quit
+```
+
+**3. Confirm** — nothing has moved yet
+
+```
+y    move the files
+n    cancel, change nothing
+```
+
+Only `y` applies a move. `Enter` deliberately does nothing on this screen, so a
+stray keypress can never reorganise your files.
+
+## Usage — classic mode
+
+`solite --classic` runs the full DESIGN.md UI (three screens, mouse, dithered
+shadows, responsive panes). That is the one the design document describes.
+
 ## Commands
 
 ```
@@ -62,20 +106,8 @@ explanatory message — it will not pretend to work.
 
 (On Windows: `gradlew.bat`)
 
-## Keyboard
-
-- `↑ ↓ / j k` move · `Home / End` jump to first / last
-- `Enter` confirm / open · `→` same as Enter · `←` / `Esc` back
-- Screen A: type to filter · `Esc` clears the filter · `q` quits (only with an empty filter)
-- Screen B: `1` move · `2` peek · `3` or `s` skip · `u` undo · `b` back
-- Screen C: `Enter` applies (double-Enter rule) · `n` / `Esc` cancels · `u` undo
-- `Ctrl+C` always quits cleanly
-
-Mouse: single click selects a row, click on an action row fires it, scroll wheel
-moves 3 rows. Both X10 (`ESC [ M`) and SGR (`ESC [ <`) reports are parsed, so it
-works in Windows Terminal as well as mintty.
-
 ## Status
 
-v0.1 — three screens (Pick → Gather → Confirm), mouse, responsive layout,
-44 tests green.
+v0.1 — simple flow (Pick → Groups → Confirm) plus the classic UI behind
+`--classic`. 65 tests green.
+

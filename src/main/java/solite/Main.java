@@ -42,8 +42,26 @@ public final class Main {
 
             terminal.enterRawMode();
 
-            TerminalApp app = new TerminalApp(terminal);
-            app.run();
+            // Simple front end is the default: two screens, one question each.
+            // The full DESIGN.md UI is still available with --classic.
+            boolean classic = false;
+            String startPath = null;
+            for (String a : args) {
+                if ("--classic".equals(a) || "-c".equals(a)) {
+                    classic = true;
+                } else if (!a.startsWith("-")) {
+                    startPath = a;
+                }
+            }
+
+            if (classic) {
+                new TerminalApp(terminal).run();
+            } else {
+                java.nio.file.Path start = startPath == null
+                        ? null
+                        : java.nio.file.Paths.get(startPath);
+                new solite.ui.SimpleUI(terminal, start).run();
+            }
         } catch (Exception e) {
             System.err.println("solite failed to start: " + e.getMessage());
             e.printStackTrace();

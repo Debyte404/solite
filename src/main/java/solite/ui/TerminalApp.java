@@ -119,6 +119,7 @@ public final class TerminalApp {
         repaint();
 
         // Event loop: read keys + mouse
+        boolean lastWasCr = false;
         while (running) {
             try {
                 int key = terminal.reader().read();
@@ -126,6 +127,15 @@ public final class TerminalApp {
                     running = false;
                     break;
                 }
+                // Enter arrives as CR+LF on Windows — drop the second byte so
+                // one press is one action (otherwise a single Enter both staged
+                // and applied a move).
+                if (KeyInput.isDuplicateEndOfLine(key, lastWasCr)) {
+                    lastWasCr = false;
+                    continue;
+                }
+                lastWasCr = (key == KeyInput.CR);
+
                 // JLine encodes mouse events as ESC [ M ... — detect escape prefix
                 if (key == 27) {
                     if (!handleEscapeSequence()) {
