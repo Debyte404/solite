@@ -21,6 +21,8 @@ repositories {
 dependencies {
     // TUI framework (JLine 3 — terminal input, line editing, ANSI rendering)
     implementation 'org.jline:jline:3.30.0'
+    // Windows terminal provider — JNI buffers work on Java < 22 (we're on 17)
+    implementation 'org.jline:jline-terminal-jni:3.30.0'
 
     // JSON persistence for the file-index database
     implementation 'com.google.code.gson:gson:2.13.2'
@@ -36,6 +38,30 @@ application {
     mainClass = 'solite.Main'
 }
 
+run {
+    standardInput = System.in
+}
+
 test {
     useJUnitPlatform()
+}
+
+tasks.register('packageExe', Exec) {
+    dependsOn installDist
+    description = 'Packages a standalone Windows executable (solite.exe) with embedded runtime.'
+    group = 'distribution'
+
+    doFirst {
+        delete layout.buildDirectory.dir('dist/solite')
+    }
+
+    workingDir project.projectDir
+    commandLine 'jpackage',
+            '--type', 'app-image',
+            '--name', 'solite',
+            '--input', layout.buildDirectory.dir('install/solite/lib').get().asFile.absolutePath,
+            '--main-jar', "solite-${version}.jar",
+            '--main-class', 'solite.Main',
+            '--dest', layout.buildDirectory.dir('dist').get().asFile.absolutePath,
+            '--win-console'
 }

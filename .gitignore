@@ -25,3 +25,4 @@ local.properties
 # Local JDKs and logs
 jdk-*.jdk/
 move_log.txt
+*.exe

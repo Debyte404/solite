@@ -89,4 +89,102 @@ class FileOrganizerTest {
         assertFalse(Files.exists(targetDir.resolve("test1.txt")), "Target file1 should not exist after undo");
         assertFalse(Files.exists(targetDir.resolve("test2.txt")), "Target file2 should not exist after undo");
     }
+
+    @Test
+    void testMoveAllGroupsAndUndo(@TempDir Path tempDir) throws IOException {
+        Path file1 = tempDir.resolve("photo.png");
+        Path file2 = tempDir.resolve("paper.pdf");
+        Path file3 = tempDir.resolve("notes.txt");
+        Files.createFile(file1);
+        Files.createFile(file2);
+        Files.createFile(file3);
+
+        List<FileOrganizer.Group> groups = organizer.groupFiles(tempDir);
+        assertEquals(3, groups.size(), "Should have 3 groups");
+
+        organizer.moveAllGroups(groups, tempDir);
+
+        assertFalse(Files.exists(file1), "photo.png moved");
+        assertFalse(Files.exists(file2), "paper.pdf moved");
+        assertFalse(Files.exists(file3), "notes.txt moved");
+
+        assertTrue(Files.exists(tempDir.resolve("PNG").resolve("photo.png")), "PNG/photo.png exists");
+        assertTrue(Files.exists(tempDir.resolve("PDF").resolve("paper.pdf")), "PDF/paper.pdf exists");
+        assertTrue(Files.exists(tempDir.resolve("TXT").resolve("notes.txt")), "TXT/notes.txt exists");
+
+        organizer.undoMove();
+
+        assertTrue(Files.exists(file1), "photo.png restored");
+        assertTrue(Files.exists(file2), "paper.pdf restored");
+        assertTrue(Files.exists(file3), "notes.txt restored");
+    }
+
+    @Test
+    void testFindAndTidyDuplicates(@TempDir Path tempDir) throws IOException {
+        // Create 2 duplicates of file A
+        Path f1 = tempDir.resolve("doc1.txt");
+        Path f2 = tempDir.resolve("doc1_copy.txt");
+        Files.writeString(f1, "identical content A");
+        Files.writeString(f2, "identical content A");
+
+        // Create 3 duplicates of file B (one in a subfolder)
+        Path sub = tempDir.resolve("sub");
+        Files.createDirectory(sub);
+        Path f3 = tempDir.resolve("pic1.png");
+        Path f4 = tempDir.resolve("pic2.png");
+        Path f5 = sub.resolve("pic3.png");
+        Files.writeString(f3, "image bytes XYZ");
+        Files.writeString(f4, "image bytes XYZ");
+        Files.writeString(f5, "image bytes XYZ");
+
+        // Unique file C
+        Path f6 = tempDir.resolve("unique.log");
+        Files.writeString(f6, "completely unique content");
+
+        List<FileOrganizer.DuplicateGroup> dups = organizer.findDuplicates(tempDir);
+        assertEquals(2, dups.size(), "Should find 2 duplicate groups");
+
+        // Group 1: 3 files (2 duplicates)
+        FileOrganizer.DuplicateGroup picGroup = dups.stream()
+                .filter(g -> g.getFiles().size() == 3)
+                .findFirst().orElse(null);
+        assertNotNull(picGroup);
+        assertEquals(2, picGroup.getDuplicates().size());
+        assertNotNull(picGroup.getOriginal());
+
+        // Group 2: 2 files (1 duplicate)
+        FileOrganizer.DuplicateGroup docGroup = dups.stream()
+                .filter(g -> g.getFiles().size() == 2)
+                .findFirst().orElse(null);
+        assertNotNull(docGroup);
+        assertEquals(1, docGroup.getDuplicates().size());
+
+        // Tidy duplicates into Duplicates/
+        organizer.tidyDuplicates(dups, tempDir);
+
+        Path dupsDir = tempDir.resolve("Duplicates");
+        assertTrue(Files.exists(dupsDir), "Duplicates directory created");
+
+        // Originals must still exist
+        assertTrue(Files.exists(picGroup.getOriginal()), "pic original exists");
+        assertTrue(Files.exists(docGroup.getOriginal()), "doc original exists");
+        assertTrue(Files.exists(f6), "unique file untouched");
+
+        // Duplicates moved
+        for (Path dup : picGroup.getDuplicates()) {
+            assertFalse(Files.exists(dup), "Duplicate copy moved from original path");
+        }
+        for (Path dup : docGroup.getDuplicates()) {
+            assertFalse(Files.exists(dup), "Duplicate copy moved from original path");
+        }
+
+        // Test undo
+        organizer.undoMove();
+        for (Path dup : picGroup.getDuplicates()) {
+            assertTrue(Files.exists(dup), "Duplicate copy restored by undo");
+        }
+        for (Path dup : docGroup.getDuplicates()) {
+            assertTrue(Files.exists(dup), "Duplicate copy restored by undo");
+        }
+    }
 }

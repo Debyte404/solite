@@ -2,6 +2,9 @@ package solite.ui;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -67,5 +70,80 @@ class TerminalAppLogicTest {
         assertEquals(TerminalApp.Screen.PICK, screens[0]);
         assertEquals(TerminalApp.Screen.GATHER, screens[1]);
         assertEquals(TerminalApp.Screen.CONFIRM, screens[2]);
+    }
+
+    @Test
+    void initializeDumbTerminalUsesFallbackDimensions() throws Exception {
+        org.jline.terminal.Terminal term = org.jline.terminal.TerminalBuilder.builder()
+                .dumb(true)
+                .build();
+        TerminalApp app = new TerminalApp(term);
+        assertNotNull(app);
+    }
+
+    @Test
+    void runExitsCleanlyOnEof() throws Exception {
+        org.jline.terminal.Terminal term = org.jline.terminal.TerminalBuilder.builder()
+                .dumb(true)
+                .streams(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream())
+                .build();
+        TerminalApp app = new TerminalApp(term);
+        assertDoesNotThrow(app::run);
+    }
+
+    @Test
+    void runExitsCleanlyOnQKey() throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        org.jline.terminal.Terminal term = org.jline.terminal.TerminalBuilder.builder()
+                .dumb(true)
+                .streams(new ByteArrayInputStream("q".getBytes(StandardCharsets.UTF_8)), out)
+                .build();
+        TerminalApp app = new TerminalApp(term);
+        assertDoesNotThrow(app::run);
+        String output = out.toString(StandardCharsets.UTF_8);
+        // Verify alternate buffer enter and clean exit escape sequences
+        assertTrue(output.contains("\u001b[?1049h"), "Enters alternate screen buffer on start");
+        assertTrue(output.contains("\u001b[?1049l"), "Leaves alternate screen buffer on quit");
+        assertTrue(output.contains("\u001b[?25h"), "Restores cursor visibility on quit");
+    }
+
+    @Test
+    void runTogglesHelpModalOnQuestionMark() throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        org.jline.terminal.Terminal term = org.jline.terminal.TerminalBuilder.builder()
+                .dumb(true)
+                .streams(new ByteArrayInputStream("?q".getBytes(StandardCharsets.UTF_8)), out)
+                .build();
+        TerminalApp app = new TerminalApp(term);
+        assertDoesNotThrow(app::run);
+        String output = out.toString(StandardCharsets.UTF_8);
+        assertTrue(output.contains("Solite Help & Instructions"), "Renders help modal on ? key");
+    }
+
+    @Test
+    void pickItemModelTypes() {
+        TerminalApp.PickItem quick = new TerminalApp.PickItem(
+                TerminalApp.PickItem.Type.QUICK_TIDY_ALL, Paths.get("."), "Quick Tidy", 0);
+        TerminalApp.PickItem tidy = new TerminalApp.PickItem(
+                TerminalApp.PickItem.Type.TIDY_CURRENT, Paths.get("."), "Tidy", 0);
+        TerminalApp.PickItem dups = new TerminalApp.PickItem(
+                TerminalApp.PickItem.Type.FIND_DUPLICATES, Paths.get("."), "Duplicates", 0);
+        TerminalApp.PickItem up = new TerminalApp.PickItem(
+                TerminalApp.PickItem.Type.GO_UP, Paths.get(".."), "..", 0);
+        TerminalApp.PickItem drive = new TerminalApp.PickItem(
+                TerminalApp.PickItem.Type.DRIVE, Paths.get("C:\\"), "C:\\", 0);
+        TerminalApp.PickItem dir = new TerminalApp.PickItem(
+                TerminalApp.PickItem.Type.DIRECTORY, Paths.get("photos"), "photos/", 0);
+        TerminalApp.PickItem file = new TerminalApp.PickItem(
+                TerminalApp.PickItem.Type.FILE, Paths.get("test.txt"), "test.txt", 1024);
+
+        assertEquals(TerminalApp.PickItem.Type.QUICK_TIDY_ALL, quick.type);
+        assertEquals(TerminalApp.PickItem.Type.TIDY_CURRENT, tidy.type);
+        assertEquals(TerminalApp.PickItem.Type.FIND_DUPLICATES, dups.type);
+        assertEquals(TerminalApp.PickItem.Type.GO_UP, up.type);
+        assertEquals(TerminalApp.PickItem.Type.DRIVE, drive.type);
+        assertEquals(TerminalApp.PickItem.Type.DIRECTORY, dir.type);
+        assertEquals(TerminalApp.PickItem.Type.FILE, file.type);
+        assertEquals(1024, file.size);
     }
 }

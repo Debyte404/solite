@@ -17,7 +17,6 @@ public final class Main {
         try {
             Terminal terminal = TerminalBuilder.builder()
                     .system(true)
-                    .jansi(true)
                     .build();
 
             terminal.enterRawMode();

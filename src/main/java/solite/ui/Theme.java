@@ -19,11 +19,13 @@ import org.jline.utils.AttributedStyle;
 public final class Theme {
 
     public final int honey, amber, wax, paper, ash, leaf, ember;
+    public final int ink;
     public final boolean roundBorders, ditherBlocks, mouseTracking;
     public final boolean colored;
     public final AttributedStyle styleHoney, styleAmber, styleWax, stylePaper, styleAsh;
+    public final AttributedStyle styleFocus;
 
-    private Theme(int honey, int amber, int wax, int paper, int ash, int leaf, int ember,
+    private Theme(int honey, int amber, int wax, int paper, int ash, int leaf, int ember, int ink,
                   boolean roundBorders, boolean ditherBlocks, boolean mouseTracking,
                   boolean colored) {
         this.honey = honey;
@@ -33,6 +35,7 @@ public final class Theme {
         this.ash = ash;
         this.leaf = leaf;
         this.ember = ember;
+        this.ink = ink;
         this.roundBorders = roundBorders;
         this.ditherBlocks = ditherBlocks;
         this.mouseTracking = mouseTracking;
@@ -43,6 +46,18 @@ public final class Theme {
         this.styleWax = AttributedStyle.DEFAULT.foreground(wax);
         this.stylePaper = AttributedStyle.DEFAULT.foreground(paper);
         this.styleAsh = AttributedStyle.DEFAULT.foreground(ash);
+        if (!colored) {
+            this.styleFocus = AttributedStyle.DEFAULT.inverse();
+        } else if (honey == 0xFFC800) {
+            // Truecolor: vibrant honey yellow #FFC800 background with solid pure jet-black #000000 text
+            this.styleFocus = AttributedStyle.DEFAULT.background(honey).foreground(0x000000);
+        } else if (honey == 220) {
+            // 256-color: bright yellow (220) background with solid black (16) text
+            this.styleFocus = AttributedStyle.DEFAULT.background(honey).foreground(16);
+        } else {
+            // 16-color: standard yellow background with solid black text
+            this.styleFocus = AttributedStyle.DEFAULT.background(AttributedStyle.YELLOW).foreground(AttributedStyle.BLACK);
+        }
     }
 
     /**
@@ -88,6 +103,7 @@ public final class Theme {
                 0x9A917A, // ash
                 0x9DBE00, // leaf
                 0xFF5C00, // ember
+                0x0B0A06, // ink
                 true,     // roundBorders
                 true,     // ditherBlocks (░ enhancement)
                 true,     // mouseTracking
@@ -105,6 +121,7 @@ public final class Theme {
                 246,  // ash    #9A917A
                 148,  // leaf   #9DBE00
                 202,  // ember  #FF5C00
+                232,  // ink
                 true, // roundBorders
                 false, // ditherBlocks (no ░ on 256)
                 true,  // mouseTracking
@@ -122,6 +139,7 @@ public final class Theme {
                 AttributedStyle.WHITE,      // ash
                 AttributedStyle.GREEN,      // leaf
                 AttributedStyle.RED,        // ember
+                AttributedStyle.BLACK,      // ink
                 false,                      // roundBorders (square only)
                 false,                      // ditherBlocks
                 false,                      // mouseTracking (flaky on legacy)
@@ -139,6 +157,7 @@ public final class Theme {
                 AttributedStyle.WHITE,
                 AttributedStyle.WHITE,
                 AttributedStyle.WHITE,
+                AttributedStyle.BLACK,
                 false,
                 false,
                 false,
