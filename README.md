@@ -51,49 +51,33 @@ next to the script, `<repo>/cli/solite.jar`, then
 **The TUI needs a real TTY.** Piped or dumb terminals exit with code 2 and an
 explanatory message — it will not pretend to work.
 
-## Usage — simple mode (default)
-
-Two screens, one question each. No mouse, no colours, no surprises.
+## Usage
 
 ```
 solite                  start in your home folder
 solite D:\Downloads     start in a specific folder
 ```
 
-**1. Pick** — where to tidy
+The window shows the current path, the list, and a key cheat sheet.
 
 ```
-↑ ↓            move
-a..z           type to filter  (Dow → Downloads)
-Enter          open this folder
-Backspace      go up one level (when the filter is empty)
-q              quit
+Current: ~/Downloads/College
+--------------------------------------------------
+> 📁 ..
+  📁 Documents
+  📦 photos.zip
+  🖼 holiday.jpg
+  📄 notes.txt
+--------------------------------------------------
+  [↑/↓] Move   [Enter] Open   [Backspace] Back   [o] Organise   [q] Quit
 ```
 
-**2. Groups** — what it found
-
-```
-↑ ↓            move
-Enter          ask to move this group
-u              undo the last move
-b              back to the folder list
-q              quit
-```
-
-**3. Confirm** — nothing has moved yet
-
-```
-y    move the files
-n    cancel, change nothing
-```
-
-Only `y` applies a move. `Enter` deliberately does nothing on this screen, so a
-stray keypress can never reorganise your files.
-
-## Usage — classic mode
-
-`solite --classic` runs the full DESIGN.md UI (three screens, mouse, dithered
-shadows, responsive panes). That is the one the design document describes.
+- Names only, never full paths; the path lives in the header.
+- `..` is always the first row, so going back never needs a shortcut.
+- Icons: folder, document, image, archive, audio, video, code, program.
+- Mouse: click selects, double click opens. Wheel scrolls.
+- `o` groups the current folder by extension; `Enter` on a group asks first,
+  and only `y` applies the move. `u` undoes the last move.
 
 ## Commands
 
@@ -108,6 +92,9 @@ shadows, responsive panes). That is the one the design document describes.
 
 ## Status
 
-v0.1 — simple flow (Pick → Groups → Confirm) plus the classic UI behind
-`--classic`. 65 tests green.
+v0.2 — one explorer: names only, emoji icons, breadcrumb, `..` row on top,
+double-click, grouped moves with an explicit `y` to confirm. 26 tests green.
+
+The earlier DESIGN.md UI (themes, dithered shadows, four breakpoints, mouse
+regions) is kept in `archive/` — not compiled, kept for reference.
 

@@ -19,39 +19,34 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Safety tests for the simplify flow.
+ * Explorer behaviour and move safety.
  *
- * <p>The first release had a CRLF bug that made one Enter press count twice, so
- * selecting a group both opened the confirm screen <em>and</em> applied the
- * move — files were reorganised without the user ever answering the question.
- * These tests pin the rule: nothing moves until an explicit {@code y}.
+ * <p>Rules pinned here: the ".." row is always first, names are shown without
+ * paths, folders and files carry different icons, one Enter never applies a
+ * move, and undo restores files and removes the empty folder it created.
  */
 class SimpleUIConfirmTest {
 
-    private static SimpleUI uiPointedAt(Path dir) throws Exception {
-        ByteArrayOutputStream sink = new ByteArrayOutputStream();
+    private static SimpleUI uiAt(Path dir, ByteArrayOutputStream sink) throws Exception {
         Terminal t = TerminalBuilder.builder()
                 .name("test").system(false).type("xterm-256color")
                 .streams(new ByteArrayInputStream(new byte[0]), sink)
                 .size(new Size(100, 30))
                 .build();
-
         SimpleUI ui = new SimpleUI(t);
-
-        Field dirField = SimpleUI.class.getDeclaredField("dir");
-        dirField.setAccessible(true);
-        dirField.set(ui, dir);
-
+        field(ui, "dir").set(ui, dir);
         invoke(ui, "loadEntries");
-        invoke(ui, "loadGroups");
-
-        Field screen = SimpleUI.class.getDeclaredField("screen");
-        screen.setAccessible(true);
-        // Pretend the user has opened the folder and is looking at the groups.
-        Object groupsScreen = Class.forName("solite.ui.SimpleUI$Screen").getEnumConstants()[1];
-        screen.set(ui, groupsScreen);
-
         return ui;
+    }
+
+    private static SimpleUI uiAt(Path dir) throws Exception {
+        return uiAt(dir, new ByteArrayOutputStream());
+    }
+
+    private static Field field(SimpleUI ui, String name) throws Exception {
+        Field f = SimpleUI.class.getDeclaredField(name);
+        f.setAccessible(true);
+        return f;
     }
 
     private static Object invoke(SimpleUI ui, String name) throws Exception {
@@ -60,82 +55,150 @@ class SimpleUIConfirmTest {
         return m.invoke(ui);
     }
 
-    private static Object invoke(SimpleUI ui, String name, Class<?> argType, Object arg) throws Exception {
-        Method m = SimpleUI.class.getDeclaredMethod(name, argType);
+    private static Object invoke(SimpleUI ui, String name, Class<?> type, Object arg) throws Exception {
+        Method m = SimpleUI.class.getDeclaredMethod(name, type);
         m.setAccessible(true);
         return m.invoke(ui, arg);
     }
 
-    private static Path makeFiles(Path dir, String... names) throws Exception {
+    private static void files(Path dir, String... names) throws Exception {
         for (String n : names) {
             Files.createFile(dir.resolve(n));
         }
-        return dir;
+    }
+
+    @Test
+    void firstRowIsAlwaysTheBackEntry(@TempDir Path dir) throws Exception {
+        files(dir, "a.jpg");
+        SimpleUI ui = uiAt(dir);
+        assertEquals(2, invoke(ui, "itemCount"), "1 file + the '..' row");
+        assertEquals(0, field(ui, "cursor").get(ui), "cursor starts on '..'");
+    }
+
+    @Test
+    void enterOnBackRowGoesToTheParent(@TempDir Path dir) throws Exception {
+        Path sub = dir.resolve("Child");
+        Files.createDirectory(sub);
+        SimpleUI ui = uiAt(sub);
+
+        ui.activate();                       // cursor is on ".."
+
+        assertEquals(dir.toAbsolutePath().normalize(),
+                ((Path) field(ui, "dir").get(ui)).toAbsolutePath().normalize());
     }
 
     @Test
     void enterOnAGroupOnlyOpensTheQuestion(@TempDir Path dir) throws Exception {
-        makeFiles(dir, "a.jpg", "b.jpg");
-        SimpleUI ui = uiPointedAt(dir);
+        files(dir, "a.jpg", "b.jpg");
+        SimpleUI ui = uiAt(dir);
+        invoke(ui, "organiseHere");
 
-        invoke(ui, "onEnter");   // user presses Enter on the group
+        invoke(ui, "activate");              // Enter on the highlighted group
 
         assertTrue(Files.exists(dir.resolve("a.jpg")), "Enter alone must not move anything");
-        assertTrue(Files.exists(dir.resolve("b.jpg")), "Enter alone must not move anything");
-        assertFalse(Files.exists(dir.resolve("JPG")), "no target folder may be created yet");
+        assertFalse(Files.exists(dir.resolve("JPG")), "no target folder may exist yet");
     }
 
     @Test
     void explicitYesMovesTheFiles(@TempDir Path dir) throws Exception {
-        makeFiles(dir, "a.jpg", "b.jpg");
-        SimpleUI ui = uiPointedAt(dir);
+        files(dir, "a.jpg", "b.jpg");
+        SimpleUI ui = uiAt(dir);
+        invoke(ui, "organiseHere");
 
-        invoke(ui, "onEnter");
+        invoke(ui, "activate");
         invoke(ui, "onConfirmKey", int.class, (int) 'y');
 
-        assertTrue(Files.exists(dir.resolve("JPG")), "target folder should exist after y");
-        assertTrue(Files.exists(dir.resolve("JPG").resolve("a.jpg")), "a.jpg should be moved");
-        assertTrue(Files.exists(dir.resolve("JPG").resolve("b.jpg")), "b.jpg should be moved");
+        assertTrue(Files.exists(dir.resolve("JPG").resolve("a.jpg")));
+        assertTrue(Files.exists(dir.resolve("JPG").resolve("b.jpg")));
     }
 
     @Test
-    void explicitNoLeavesEverythingAlone(@TempDir Path dir) throws Exception {
-        makeFiles(dir, "a.jpg");
-        SimpleUI ui = uiPointedAt(dir);
+    void explicitNoChangesNothing(@TempDir Path dir) throws Exception {
+        files(dir, "a.jpg");
+        SimpleUI ui = uiAt(dir);
+        invoke(ui, "organiseHere");
 
-        invoke(ui, "onEnter");
+        invoke(ui, "activate");
         invoke(ui, "onConfirmKey", int.class, (int) 'n');
 
-        assertTrue(Files.exists(dir.resolve("a.jpg")), "n must not move anything");
-        assertFalse(Files.exists(dir.resolve("JPG")), "n must not create the target folder");
+        assertTrue(Files.exists(dir.resolve("a.jpg")));
+        assertFalse(Files.exists(dir.resolve("JPG")));
     }
 
     @Test
-    void undoPutsTheFilesBack(@TempDir Path dir) throws Exception {
-        makeFiles(dir, "a.jpg");
-        SimpleUI ui = uiPointedAt(dir);
+    void undoRestoresFilesAndRemovesTheEmptyFolder(@TempDir Path dir) throws Exception {
+        files(dir, "a.jpg");
+        SimpleUI ui = uiAt(dir);
+        invoke(ui, "organiseHere");
 
-        invoke(ui, "onEnter");
+        invoke(ui, "activate");
         invoke(ui, "onConfirmKey", int.class, (int) 'y');
         assertTrue(Files.exists(dir.resolve("JPG").resolve("a.jpg")));
 
         invoke(ui, "undo");
 
-        assertTrue(Files.exists(dir.resolve("a.jpg")), "undo must restore the original file");
-        assertFalse(Files.exists(dir.resolve("JPG").resolve("a.jpg")), "target copy should be gone");
-        assertFalse(Files.exists(dir.resolve("JPG")), "the empty folder we created should be removed");
+        assertTrue(Files.exists(dir.resolve("a.jpg")), "undo must restore the file");
+        assertFalse(Files.exists(dir.resolve("JPG")), "the folder we created must be removed");
     }
 
     @Test
     void groupsScreenListsEveryExtension(@TempDir Path dir) throws Exception {
-        makeFiles(dir, "a.jpg", "b.zip", "c.pdf");
-        SimpleUI ui = uiPointedAt(dir);
+        files(dir, "a.jpg", "b.zip", "c.pdf");
+        SimpleUI ui = uiAt(dir);
+        invoke(ui, "organiseHere");
 
-        Field gf = SimpleUI.class.getDeclaredField("groups");
-        gf.setAccessible(true);
         @SuppressWarnings("unchecked")
-        List<FileOrganizer.Group> groups = (List<FileOrganizer.Group>) gf.get(ui);
+        List<FileOrganizer.Group> groups = (List<FileOrganizer.Group>) field(ui, "groups").get(ui);
+        assertEquals(3, groups.size(), "jpg + zip + pdf");
+    }
 
-        assertEquals(3, groups.size(), "jpg + zip + pdf = 3 groups");
+    @Test
+    void singleClickOnlySelects(@TempDir Path dir) throws Exception {
+        Path sub = dir.resolve("Photos");
+        Files.createDirectory(sub);
+        SimpleUI ui = uiAt(dir);
+
+        // Row 2 is the ".." entry, row 3 is the folder.
+        ui.onMouse(0, 5, 3);
+
+        assertEquals(1, field(ui, "cursor").get(ui), "one click selects the folder row");
+        assertEquals(dir.toAbsolutePath().normalize(),
+                ((Path) field(ui, "dir").get(ui)).toAbsolutePath().normalize(),
+                "one click must not enter the folder");
+    }
+
+    @Test
+    void doubleClickEntersTheFolder(@TempDir Path dir) throws Exception {
+        Path sub = dir.resolve("Photos");
+        Files.createDirectory(sub);
+        SimpleUI ui = uiAt(dir);
+
+        ui.onMouse(0, 5, 3);
+        ui.onMouse(0, 5, 3);                 // same row, immediately
+
+        assertEquals(sub.toAbsolutePath().normalize(),
+                ((Path) field(ui, "dir").get(ui)).toAbsolutePath().normalize(),
+                "double click should open the folder");
+    }
+
+    @Test
+    void rowsShowNamesAndIconsButNotPaths(@TempDir Path dir) throws Exception {
+        Files.createDirectory(dir.resolve("Photos"));
+        Files.createFile(dir.resolve("notes.txt"));
+        Files.createFile(dir.resolve("photo.jpg"));
+        Files.createFile(dir.resolve("bundle.zip"));
+
+        ByteArrayOutputStream sink = new ByteArrayOutputStream();
+        SimpleUI ui = uiAt(dir, sink);
+        invoke(ui, "draw");
+        String out = sink.toString(StandardCharsets.UTF_8);
+
+        assertTrue(out.contains(".."), "the back row must always be listed");
+        assertTrue(out.contains("Photos"), "folder name listed");
+        assertTrue(out.contains("notes.txt"), "file name listed");
+        assertTrue(out.contains(SimpleUI.IMG_ICON), "images get an image icon");
+        assertTrue(out.contains(SimpleUI.ZIP_ICON), "archives get an archive icon");
+        assertTrue(out.contains(SimpleUI.BACK_ICON), "folders get a folder icon");
+        assertFalse(out.contains(dir.toString()), "full paths must never be printed");
     }
 }

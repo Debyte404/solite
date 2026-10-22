@@ -13,24 +13,19 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * The simple front end must always paint something actionable: a header naming
- * the current folder, the list, and a footer with the keys. These tests drive
- * {@code draw()} against an in-memory terminal so a blank screen or a missing
- * hint fails here instead of in front of the user.
+ * The browser must always paint something usable: a title, the list starting
+ * with the ".." row, and a footer with the keys. A blank screen fails here
+ * instead of in front of the user.
  */
 class SimpleUITest {
 
-    private static Terminal terminal(int cols, int rows, ByteArrayOutputStream sink) throws Exception {
-        return TerminalBuilder.builder()
+    private static String draw(int cols, int rows) throws Exception {
+        ByteArrayOutputStream sink = new ByteArrayOutputStream();
+        Terminal t = TerminalBuilder.builder()
                 .name("test").system(false).type("xterm-256color")
                 .streams(new ByteArrayInputStream(new byte[0]), sink)
                 .size(new Size(cols, rows))
                 .build();
-    }
-
-    private static String draw(int cols, int rows) throws Exception {
-        ByteArrayOutputStream sink = new ByteArrayOutputStream();
-        Terminal t = terminal(cols, rows, sink);
         SimpleUI ui = new SimpleUI(t);
 
         Method load = SimpleUI.class.getDeclaredMethod("loadEntries");
@@ -49,34 +44,58 @@ class SimpleUITest {
     }
 
     @Test
-    void firstScreenShowsFolderAndKeys() throws Exception {
+    void firstScreenShowsTitleBackRowAndKeys() throws Exception {
         String out = stripAnsi(draw(100, 30));
-        assertTrue(out.contains("solite"), "header should name the app");
-        assertTrue(out.contains("Folder"), "pick screen should say Folder");
-        assertTrue(out.contains("Enter"), "footer must show the Enter action");
-        assertTrue(out.contains("quit"), "footer must show how to leave");
+        assertTrue(out.contains("Current:"), "header must show the breadcrumb path");
+        assertTrue(out.contains(".."), "the back row must be visible");
+        assertTrue(out.contains("[Enter] Open"), "footer must show the Enter hint");
+        assertTrue(out.contains("[q] Quit"), "footer must show how to quit");
+        assertTrue(out.contains("[Backspace] Back"), "footer must show how to go back");
     }
 
     @Test
     void paintsAtNarrowWidth() throws Exception {
-        String out = draw(40, 15);
-        assertFalse(out.isBlank(), "narrow terminals must still render");
+        assertFalse(draw(40, 15).isBlank(), "narrow terminals must still render");
     }
 
     @Test
     void paintsOnZeroSizedTerminal() throws Exception {
-        String out = draw(0, 0);
-        assertFalse(out.isBlank(), "0x0 must fall back to 80x24, not render nothing");
+        assertFalse(draw(0, 0).isBlank(), "0x0 must fall back to 80x24");
     }
 
     @Test
     void everyLineFitsTheWidth() throws Exception {
         int width = 60;
-        String out = stripAnsi(draw(width, 20));
-        for (String line : out.split("\r\n|\n")) {
-            assertTrue(line.length() <= width,
-                    "line wider than terminal (" + line.length() + " > " + width + "): [" + line + "]");
+        for (String line : stripAnsi(draw(width, 20)).split("\r\n|\n")) {
+            int w = SimpleUI.displayWidth(line);
+            assertTrue(w <= width, "line too wide (" + w + " > " + width + "): [" + line + "]");
         }
+    }
+
+    @Test
+    void iconsAreChosenByType() throws Exception {
+        assertEquals(SimpleUI.BACK_ICON, SimpleUI.iconFor(java.nio.file.Paths.get("C:/tmp")));
+        assertEquals(SimpleUI.IMG_ICON, SimpleUI.iconFor(java.nio.file.Paths.get("photo.jpg")));
+        assertEquals(SimpleUI.ZIP_ICON, SimpleUI.iconFor(java.nio.file.Paths.get("bundle.zip")));
+        assertEquals(SimpleUI.AUDIO_ICON, SimpleUI.iconFor(java.nio.file.Paths.get("song.mp3")));
+        assertEquals(SimpleUI.VIDEO_ICON, SimpleUI.iconFor(java.nio.file.Paths.get("clip.mp4")));
+        assertEquals(SimpleUI.APP_ICON, SimpleUI.iconFor(java.nio.file.Paths.get("setup.exe")));
+        assertEquals(SimpleUI.CODE_ICON, SimpleUI.iconFor(java.nio.file.Paths.get("Main.java")));
+        assertEquals(SimpleUI.DOC_ICON, SimpleUI.iconFor(java.nio.file.Paths.get("resume.pdf")));
+    }
+
+    @Test
+    void emojiCountAsTwoCells() {
+        assertEquals(2, SimpleUI.displayWidth(SimpleUI.BACK_ICON), "an emoji occupies two cells");
+        assertEquals(4, SimpleUI.displayWidth("ab" + SimpleUI.BACK_ICON), "two letters plus one emoji");
+    }
+
+    @Test
+    void truncateNeverSplitsAnEmoji() {
+        String s = SimpleUI.BACK_ICON + SimpleUI.BACK_ICON + "Photos";
+        String cut = SimpleUI.truncate(s, 5);
+        assertTrue(SimpleUI.displayWidth(cut) <= 5, "must fit the width");
+        assertFalse(cut.isEmpty(), "must keep something");
     }
 
     @Test

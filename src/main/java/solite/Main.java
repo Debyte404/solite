@@ -1,17 +1,19 @@
 package solite;
 
-import solite.ui.TerminalApp;
+import solite.ui.SimpleUI;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 /**
- * Entry point for solite. Sets up the JLine terminal and launches the TUI app.
+ * Entry point for solite. Sets up the JLine terminal and launches the explorer.
  *
  * <p>If the host is not an interactive terminal (piped output, dumb console,
  * CI), the app explains that and exits with code 2 instead of silently
- * "succeeding" while doing nothing — DESIGN.md §8.
+ * "succeeding" while doing nothing.
  */
 public final class Main {
 
@@ -42,26 +44,14 @@ public final class Main {
 
             terminal.enterRawMode();
 
-            // Simple front end is the default: two screens, one question each.
-            // The full DESIGN.md UI is still available with --classic.
-            boolean classic = false;
             String startPath = null;
             for (String a : args) {
-                if ("--classic".equals(a) || "-c".equals(a)) {
-                    classic = true;
-                } else if (!a.startsWith("-")) {
+                if (!a.startsWith("-")) {
                     startPath = a;
                 }
             }
-
-            if (classic) {
-                new TerminalApp(terminal).run();
-            } else {
-                java.nio.file.Path start = startPath == null
-                        ? null
-                        : java.nio.file.Paths.get(startPath);
-                new solite.ui.SimpleUI(terminal, start).run();
-            }
+            Path start = startPath == null ? null : Paths.get(startPath);
+            new SimpleUI(terminal, start).run();
         } catch (Exception e) {
             System.err.println("solite failed to start: " + e.getMessage());
             e.printStackTrace();
