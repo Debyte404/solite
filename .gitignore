@@ -26,3 +26,9 @@ local.properties
 jdk-*.jdk/
 move_log.txt
 *.exe
+
+# Local agent scratch + generated defense/pitch docs (untracked)
+.commandcode/
+PROJECT_DEFENSE_OVERVIEW.md
+STUDENT1_PITCH.md
+STUDENT2_PITCH.md

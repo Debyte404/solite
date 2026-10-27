@@ -16,7 +16,6 @@ import java.util.stream.Stream;
 
 public class FileOrganizer {
 
-    // Nested class demonstrating encapsulation, objects, and classes
     public static class Group {
         private final String name;
         private final List<Path> files;
@@ -40,10 +39,6 @@ public class FileOrganizer {
         }
     }
 
-    /**
-     * Represents a cluster of duplicate files sharing the identical SHA-256 hash.
-     * The first file in the list is considered the primary original; the rest are duplicates.
-     */
     public static class DuplicateGroup {
         private final String hash;
         private final long fileSize;
@@ -53,7 +48,6 @@ public class FileOrganizer {
             this.hash = hash;
             this.fileSize = fileSize;
             this.files = new ArrayList<>(files);
-            // Sort deterministically so shallowest/alphabetical path is original
             this.files.sort(Comparator.comparing(Path::toString));
         }
 
@@ -75,12 +69,8 @@ public class FileOrganizer {
         }
     }
 
-    // Access control and encapsulation
     private final List<Action> undoStack = new ArrayList<>();
 
-    /**
-     * Lists children, sorts dirs first.
-     */
     public List<Path> listEntries(Path dir, String filter) throws IOException {
         try (Stream<Path> stream = Files.list(dir)) {
             return stream
@@ -98,12 +88,9 @@ public class FileOrganizer {
         }
     }
 
-    /**
-     * Groups files by extension in the given directory and its subdirectories (demonstrates recursion).
-     */
     public List<Group> groupFiles(Path dir) throws IOException {
         List<Path> allFiles = new ArrayList<>();
-        // Exception handling
+
         try {
             collectFilesRecursively(dir, allFiles);
         } catch (IOException e) {
@@ -119,14 +106,13 @@ public class FileOrganizer {
                 .collect(Collectors.toList());
     }
 
-    // Recursion implementation
     private void collectFilesRecursively(Path dir, List<Path> allFiles) throws IOException {
         try (Stream<Path> stream = Files.list(dir)) {
             for (Path path : stream.collect(Collectors.toList())) {
                 if (Files.isDirectory(path)) {
                     String name = path.getFileName() != null ? path.getFileName().toString() : "";
                     if (!name.equalsIgnoreCase(".git") && !name.equalsIgnoreCase("Duplicates")) {
-                        collectFilesRecursively(path, allFiles); // Recursive call
+                        collectFilesRecursively(path, allFiles);
                     }
                 } else if (Files.isRegularFile(path)) {
                     allFiles.add(path);
@@ -144,19 +130,17 @@ public class FileOrganizer {
         return "";
     }
 
-    // Overloading example
     public void moveFiles(List<Path> files, Path targetDir) throws IOException {
         moveFiles(files, targetDir, false);
     }
 
-    // Method overloading and file I/O
     public void moveFiles(List<Path> files, Path targetDir, boolean overwrite) throws IOException {
         if (!Files.exists(targetDir)) {
             Files.createDirectories(targetDir);
         }
-        
-        undoStack.clear(); // One level deep undo as per rules
-        
+
+        undoStack.clear();
+
         for (Path file : files) {
             Path targetFile = targetDir.resolve(file.getFileName());
             if (!file.equals(targetFile)) {
@@ -167,9 +151,6 @@ public class FileOrganizer {
         }
     }
 
-    /**
-     * Automatically moves all groups into their respective extension folders in one batch.
-     */
     public void moveAllGroups(List<Group> groupsToMove, Path baseDir) throws IOException {
         undoStack.clear();
         for (Group group : groupsToMove) {
@@ -195,13 +176,6 @@ public class FileOrganizer {
         undoStack.clear();
     }
 
-    /**
-     * Identifies duplicate files within the given directory and its subdirectories.
-     * Uses a fast two-phase detection:
-     *   Phase 1: Partition non-empty files by byte size.
-     *   Phase 2: For collisions, calculate cryptographic SHA-256 hash to confirm content match.
-     * Returns groups of duplicates sorted by highest wasted space first.
-     */
     public List<DuplicateGroup> findDuplicates(Path dir) throws IOException {
         List<Path> allFiles = new ArrayList<>();
         try {
@@ -210,7 +184,6 @@ public class FileOrganizer {
             throw new UnreadableFolderException("Cannot read directory: " + dir, e);
         }
 
-        // Phase 1: Group files by non-zero file size
         Map<Long, List<Path>> bySize = allFiles.stream()
                 .filter(p -> {
                     try {
@@ -227,7 +200,6 @@ public class FileOrganizer {
                     }
                 }));
 
-        // Phase 2: Compute SHA-256 hash for collisions
         List<DuplicateGroup> duplicates = new ArrayList<>();
         for (Map.Entry<Long, List<Path>> entry : bySize.entrySet()) {
             if (entry.getValue().size() < 2) continue;
@@ -247,15 +219,10 @@ public class FileOrganizer {
             }
         }
 
-        // Sort groups by wasted space descending (most space-wasting duplicates first)
         duplicates.sort((g1, g2) -> Long.compare(g2.getWastedSpace(), g1.getWastedSpace()));
         return duplicates;
     }
 
-    /**
-     * Automatically moves all redundant duplicate copies into a 'Duplicates' folder under baseDir,
-     * leaving one original file in its primary place.
-     */
     public void tidyDuplicates(List<DuplicateGroup> duplicateGroups, Path baseDir) throws IOException {
         Path targetDir = baseDir.resolve("Duplicates");
         if (!Files.exists(targetDir)) {
@@ -276,9 +243,6 @@ public class FileOrganizer {
         }
     }
 
-    /**
-     * Computes the SHA-256 hexadecimal hash string for a file.
-     */
     public static String computeFileHash(Path path) {
         try (InputStream is = Files.newInputStream(path)) {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -298,9 +262,6 @@ public class FileOrganizer {
         }
     }
 
-    /**
-     * Resolves a non-colliding destination file path inside targetDir.
-     */
     private Path resolveUniquePath(Path targetDir, String fileName) {
         Path candidate = targetDir.resolve(fileName);
         if (!Files.exists(candidate)) {

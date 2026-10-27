@@ -29,7 +29,6 @@ public class MoveAction implements Action {
             try {
                 Files.move(source, target);
             } catch (IOException e) {
-                // Fallback to byte stream copy if move fails (e.g. across mount points)
                 copyFallbackByteStream();
             }
             logAction("MOVED");
@@ -61,7 +60,7 @@ public class MoveAction implements Action {
         }
         Files.delete(source);
     }
-    
+
     private void logAction(String actionType) {
         try (PrintWriter writer = new PrintWriter(new FileWriter(LOG_FILE, true))) {
             writer.printf("[%s] %s: %s -> %s%n", LocalDateTime.now(), actionType, source, target);
