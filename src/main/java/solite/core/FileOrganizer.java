@@ -115,7 +115,10 @@ public class FileOrganizer {
                         collectFilesRecursively(path, allFiles);
                     }
                 } else if (Files.isRegularFile(path)) {
-                    allFiles.add(path);
+                    String fileName = path.getFileName() != null ? path.getFileName().toString() : "";
+                    if (!fileName.equalsIgnoreCase("move_log.txt")) {
+                        allFiles.add(path);
+                    }
                 }
             }
         }
@@ -139,12 +142,18 @@ public class FileOrganizer {
             Files.createDirectories(targetDir);
         }
 
+        // Log lives in the base dir whose content changed (parent of target),
+        // e.g. organizing /chk into /chk/TXT logs to /chk/move_log.txt,
+        // not to CWD and not inside TXT/.
+        Path baseDir = targetDir.getParent() != null ? targetDir.getParent() : targetDir;
+        Path logFile = baseDir.resolve("move_log.txt");
+
         undoStack.clear();
 
         for (Path file : files) {
             Path targetFile = targetDir.resolve(file.getFileName());
             if (!file.equals(targetFile)) {
-                Action action = new MoveAction(file, targetFile);
+                Action action = new MoveAction(file, targetFile, logFile);
                 action.execute();
                 undoStack.add(action);
             }
@@ -152,6 +161,7 @@ public class FileOrganizer {
     }
 
     public void moveAllGroups(List<Group> groupsToMove, Path baseDir) throws IOException {
+        Path logFile = baseDir.resolve("move_log.txt");
         undoStack.clear();
         for (Group group : groupsToMove) {
             Path targetDir = baseDir.resolve(group.getName());
@@ -161,7 +171,7 @@ public class FileOrganizer {
             for (Path file : group.getFiles()) {
                 Path targetFile = targetDir.resolve(file.getFileName());
                 if (!file.equals(targetFile)) {
-                    Action action = new MoveAction(file, targetFile);
+                    Action action = new MoveAction(file, targetFile, logFile);
                     action.execute();
                     undoStack.add(action);
                 }
@@ -229,13 +239,14 @@ public class FileOrganizer {
             Files.createDirectories(targetDir);
         }
 
+        Path logFile = baseDir.resolve("move_log.txt");
         undoStack.clear();
 
         for (DuplicateGroup group : duplicateGroups) {
             for (Path dupFile : group.getDuplicates()) {
                 Path targetFile = resolveUniquePath(targetDir, dupFile.getFileName().toString());
                 if (!dupFile.equals(targetFile)) {
-                    Action action = new MoveAction(dupFile, targetFile);
+                    Action action = new MoveAction(dupFile, targetFile, logFile);
                     action.execute();
                     undoStack.add(action);
                 }

@@ -13,11 +13,23 @@ public class MoveAction implements Action {
 
     private final Path source;
     private final Path target;
-    private static final String LOG_FILE = "move_log.txt";
+    private final Path logFile;
 
     public MoveAction(Path source, Path target) {
+        this(source, target, defaultLogFile(target));
+    }
+
+    public MoveAction(Path source, Path target, Path logFile) {
         this.source = source;
         this.target = target;
+        this.logFile = logFile;
+    }
+
+    private static Path defaultLogFile(Path target) {
+        if (target != null && target.getParent() != null) {
+            return target.getParent().resolve("move_log.txt");
+        }
+        return Path.of("move_log.txt");
     }
 
     @Override
@@ -62,8 +74,13 @@ public class MoveAction implements Action {
     }
 
     private void logAction(String actionType) {
-        try (PrintWriter writer = new PrintWriter(new FileWriter(LOG_FILE, true))) {
-            writer.printf("[%s] %s: %s -> %s%n", LocalDateTime.now(), actionType, source, target);
+        try {
+            if (logFile.getParent() != null) {
+                Files.createDirectories(logFile.getParent());
+            }
+            try (PrintWriter writer = new PrintWriter(new FileWriter(logFile.toFile(), true))) {
+                writer.printf("[%s] %s: %s -> %s%n", LocalDateTime.now(), actionType, source, target);
+            }
         } catch (IOException e) {
             System.err.println("Failed to log action: " + e.getMessage());
         }
