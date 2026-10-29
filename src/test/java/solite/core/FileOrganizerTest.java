@@ -61,6 +61,23 @@ class FileOrganizerTest {
     }
 
     @Test
+    void testGroupFilesCaseInsensitiveAndDeterministic(@TempDir Path tempDir) throws IOException {
+        Files.createFile(tempDir.resolve("pic1.PNG"));
+        Files.createFile(tempDir.resolve("pic2.png"));
+        Files.createFile(tempDir.resolve("pic3.Png"));
+        Files.createFile(tempDir.resolve("data.CSV"));
+        Files.createFile(tempDir.resolve("doc.txt"));
+
+        List<FileOrganizer.Group> groups = organizer.groupFiles(tempDir);
+
+        assertEquals(3, groups.size(), "Should merge mixed cases into 3 groups (CSV, PNG, TXT)");
+        assertEquals("CSV", groups.get(0).getName(), "Groups must be deterministically sorted alphabetically");
+        assertEquals("PNG", groups.get(1).getName());
+        assertEquals("TXT", groups.get(2).getName());
+        assertEquals(3, groups.get(1).getFiles().size(), "All 3 PNG variations should merge into one PNG group");
+    }
+
+    @Test
     void testMoveFilesAndUndo(@TempDir Path tempDir) throws IOException {
         Path sourceDir = tempDir.resolve("source");
         Path targetDir = tempDir.resolve("target");

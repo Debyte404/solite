@@ -35,13 +35,13 @@ public class MoveAction implements Action {
     @Override
     public void execute() throws MoveFailedException {
         try {
-            if (!Files.exists(target.getParent())) {
+            if (target.getParent() != null && !Files.exists(target.getParent())) {
                 Files.createDirectories(target.getParent());
             }
             try {
                 Files.move(source, target);
             } catch (IOException e) {
-                copyFallbackByteStream();
+                copyFallback(source, target);
             }
             logAction("MOVED");
         } catch (IOException e) {
@@ -53,7 +53,14 @@ public class MoveAction implements Action {
     public void undo() throws MoveFailedException {
         try {
             if (Files.exists(target)) {
-                Files.move(target, source);
+                if (source.getParent() != null && !Files.exists(source.getParent())) {
+                    Files.createDirectories(source.getParent());
+                }
+                try {
+                    Files.move(target, source);
+                } catch (IOException e) {
+                    copyFallback(target, source);
+                }
                 logAction("UNDONE");
             }
         } catch (IOException e) {
@@ -61,16 +68,16 @@ public class MoveAction implements Action {
         }
     }
 
-    private void copyFallbackByteStream() throws IOException {
-        try (FileInputStream in = new FileInputStream(source.toFile());
-             FileOutputStream out = new FileOutputStream(target.toFile())) {
+    private void copyFallback(Path src, Path dst) throws IOException {
+        try (FileInputStream in = new FileInputStream(src.toFile());
+             FileOutputStream out = new FileOutputStream(dst.toFile())) {
             byte[] buffer = new byte[8192];
             int bytesRead;
             while ((bytesRead = in.read(buffer)) != -1) {
                 out.write(buffer, 0, bytesRead);
             }
         }
-        Files.delete(source);
+        Files.delete(src);
     }
 
     private void logAction(String actionType) {

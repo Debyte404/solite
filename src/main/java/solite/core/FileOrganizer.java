@@ -99,10 +99,11 @@ public class FileOrganizer {
         }
 
         Map<String, List<Path>> grouped = allFiles.stream()
-                .collect(Collectors.groupingBy(this::getExtension));
+                .collect(Collectors.groupingBy(p -> getExtension(p).toUpperCase()));
 
         return grouped.entrySet().stream()
-                .map(e -> new Group(e.getKey().isEmpty() ? "Unknown" : e.getKey().toUpperCase(), e.getValue()))
+                .map(e -> new Group(e.getKey().isEmpty() ? "Unknown" : e.getKey(), e.getValue()))
+                .sorted(Comparator.comparing(Group::getName))
                 .collect(Collectors.toList());
     }
 
@@ -178,8 +179,8 @@ public class FileOrganizer {
     }
 
     public void undoMove() throws IOException {
-        for (Action action : undoStack) {
-            action.undo();
+        for (int i = undoStack.size() - 1; i >= 0; i--) {
+            undoStack.get(i).undo();
         }
         undoStack.clear();
     }
