@@ -142,9 +142,7 @@ public class FileOrganizer {
             Files.createDirectories(targetDir);
         }
 
-        // Log lives in the base dir whose content changed (parent of target),
-        // e.g. organizing /chk into /chk/TXT logs to /chk/move_log.txt,
-        // not to CWD and not inside TXT/.
+   
         Path baseDir = targetDir.getParent() != null ? targetDir.getParent() : targetDir;
         Path logFile = baseDir.resolve("move_log.txt");
 
